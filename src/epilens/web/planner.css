@@ -1,0 +1,585 @@
+:root {
+  --bg: #0b0e14;
+  --panel: #121722;
+  --line: #232b3a;
+  --text: #d6dde8;
+  --muted: #8592a6;
+  --accent: #7aa2f7;
+  --warn: #e0b45a;
+  --bad: #f87171;
+  --field: #1a2130;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    13px/1.4 system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  overflow: hidden;
+}
+button,
+select,
+input {
+  font: inherit;
+  color: var(--text);
+}
+button,
+select {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+button:hover {
+  border-color: var(--accent);
+}
+input[type="text"],
+input[type="number"],
+input:not([type]) {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 3px 6px;
+  min-width: 0;
+}
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+input[type="range"] {
+  accent-color: var(--accent);
+}
+
+#app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  height: 100%;
+}
+#main {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+}
+
+/* tabs */
+#tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 6px 8px 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+#tabs .tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  background: #0f141d;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 220px;
+}
+#tabs .tab span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#tabs .tab.cur {
+  background: var(--bg);
+  color: var(--text);
+  border-color: var(--accent);
+}
+#tabs .tab .x {
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  color: var(--muted);
+}
+#tabs .add {
+  border: 0;
+  background: none;
+  font-size: 16px;
+  padding: 2px 8px;
+  color: var(--muted);
+}
+
+/* 3D stage */
+#stage {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+#stage canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+#labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.elLabel {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #e7ecf5;
+  text-shadow:
+    0 0 3px #000,
+    0 0 6px #000;
+  white-space: nowrap;
+}
+.elLabel.sel {
+  color: var(--accent);
+}
+#views {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  display: flex;
+  gap: 3px;
+}
+#views button {
+  width: 28px;
+  padding: 3px 0;
+}
+#display {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 12px;
+  background: #121722cc;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+#display label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+#display input[type="range"] {
+  width: 110px;
+}
+.orient {
+  position: absolute;
+  color: var(--muted);
+  font-weight: 650;
+  font-size: 14px;
+  pointer-events: none;
+  opacity: 0.8;
+}
+.orient.left {
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.orient.right {
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.orient.top {
+  top: 46px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.orient.bottom {
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+#note {
+  position: absolute;
+  left: 12px;
+  bottom: 8px;
+  color: var(--warn);
+  font-size: 12px;
+  pointer-events: none;
+}
+#tip {
+  position: absolute;
+  display: none;
+  pointer-events: none;
+  background: rgba(18, 23, 34, 0.95);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-size: 12px;
+  max-width: 300px;
+  z-index: 3;
+}
+#tip .m {
+  color: var(--muted);
+}
+#offline {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 560px;
+  z-index: 5;
+  background: #3a1d1d;
+  border: 1px solid var(--bad);
+  color: #fde2e2;
+  border-radius: 7px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+/* bottom typing bar */
+#bar {
+  position: relative;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  padding: 6px 12px 10px;
+}
+#readAs {
+  min-height: 18px;
+  color: var(--muted);
+  font-size: 12.5px;
+  margin-bottom: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#readAs b {
+  color: #9ece6a;
+  font-weight: 600;
+}
+#readAs .w {
+  color: var(--warn);
+}
+#readAs .bad {
+  color: var(--bad);
+}
+#cmd {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 14px;
+  border-color: var(--accent);
+}
+#pick {
+  position: absolute;
+  left: 12px;
+  bottom: 100%;
+  margin-bottom: 6px;
+  min-width: 320px;
+  max-width: 560px;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  padding: 8px 10px;
+  box-shadow: 0 6px 20px #0008;
+  z-index: 4;
+}
+#pick .q {
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+#pick .o {
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+#pick .o.cur,
+#pick .o:hover {
+  background: #1d2a44;
+}
+#pick .o .m {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+/* right sidebar */
+#side {
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+#side .top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+#side .brand {
+  flex: 1;
+  font-weight: 650;
+  font-size: 14px;
+}
+#side h2 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 12px 12px 6px;
+}
+#menuBtn {
+  font-size: 15px;
+  padding: 1px 9px;
+}
+#menu {
+  padding: 8px 12px 12px;
+  border-bottom: 1px solid var(--line);
+}
+#menu h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 10px 0 6px;
+}
+#menu .row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  margin: 4px 0;
+}
+#menu .row select,
+#menu .row input {
+  width: 100%;
+  min-width: 0;
+}
+#menu .row input[type="checkbox"] {
+  width: auto;
+  justify-self: start;
+}
+#menu .note {
+  color: var(--muted);
+  font-size: 11.5px;
+  margin-top: 4px;
+}
+#menu .buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+#list {
+  flex: 1 0 auto;
+  padding: 0 12px 12px;
+}
+#list .empty {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 2px;
+}
+.el {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  margin-bottom: 4px;
+  cursor: pointer;
+}
+.el.sel {
+  border-color: var(--accent);
+  background: #151d2c;
+  cursor: default;
+  padding-bottom: 8px;
+}
+.el .head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+.el .name {
+  font-weight: 650;
+  font-size: 13px;
+  white-space: nowrap;
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.el .n {
+  color: var(--text);
+  font-size: 11.5px;
+  background: var(--field);
+  border-radius: 4px;
+  padding: 0 5px;
+  flex: none;
+}
+.el .tgt {
+  color: var(--muted);
+  font-size: 11.5px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.el .warn {
+  color: var(--warn);
+  flex: none;
+}
+.el .rm {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  padding: 0 3px;
+  flex: none;
+}
+.el .rm:hover {
+  color: var(--bad);
+}
+.el .edit {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 4px 6px;
+  align-items: center;
+  margin-top: 7px;
+  font-size: 12px;
+}
+.el .edit > span,
+.el .edit .pair > span {
+  color: var(--muted);
+}
+.el .edit .pair {
+  display: grid;
+  grid-template-columns: 56px;
+  gap: 6px;
+  align-items: center;
+}
+.el .head input.name {
+  font-weight: 650;
+  font-size: 13px;
+  width: auto;
+  max-width: 55%;
+  flex: none;
+  padding: 1px 4px;
+  margin-left: -5px;
+  background: transparent;
+  border-color: transparent;
+}
+.el .head input.name:hover {
+  border-color: var(--line);
+}
+.el .head input.name:focus {
+  background: var(--field);
+  border-color: var(--accent);
+}
+.el .edit .sub {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 11px;
+}
+.el .adjust {
+  margin-top: 6px;
+  font-size: 12px;
+}
+.el .adjust summary {
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.el .adjust summary:hover {
+  color: var(--text);
+}
+.el .nudge {
+  margin-top: 6px;
+  font-size: 12px;
+}
+.el .nudge .seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.el .nudge .seg button {
+  border: 0;
+  border-radius: 0;
+}
+.el .nudge .seg button.on {
+  background: #24324f;
+  color: #fff;
+}
+.el .nudge .hint {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.el .nudge .grid {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 4px;
+  margin-top: 6px;
+  justify-content: start;
+}
+.el .nudge .grid button {
+  min-width: 44px;
+}
+.el .warnings {
+  color: var(--warn);
+  font-size: 11.5px;
+  margin-top: 6px;
+}
+.err {
+  position: fixed;
+  inset: 20px;
+  background: #300;
+  color: #fcc;
+  padding: 12px;
+  white-space: pre-wrap;
+  z-index: 9;
+}
+.stopped {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #0b0e14f2;
+  font-size: 16px;
+  z-index: 8;
+}
+#tabs .tab input.rename {
+  padding: 0 4px;
+  width: auto;
+  max-width: 170px;
+}
+
+/* dropping files on the page (menu.js) */
+.drop {
+  position: fixed;
+  inset: 10px;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  background: #0b0e14d0;
+  color: var(--text);
+  font-size: 18px;
+  z-index: 9;
+  pointer-events: none;
+}
+.drop[hidden] {
+  display: none;
+}

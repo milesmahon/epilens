@@ -1,0 +1,35 @@
+[project]
+name = "epilens"
+version = "0.1.0"
+description = "Plan sEEG electrode implantations on a 3D brain"
+readme = "README.md"
+authors = [
+    { name = "Miles", email = "milesjmahon@gmail.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "flask>=3.1.3",
+    "numpy>=1.26",
+    "openpyxl>=3.1.5",
+]
+
+[project.scripts]
+epilens = "epilens.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "playwright>=1.40",
+    "pytest>=8",
+]
+build = [
+    "nilearn>=0.11",
+    "scikit-image>=0.22",
+    "scipy>=1.11",
+]
+
+[tool.uv]
+default-groups = ["dev", "build"]

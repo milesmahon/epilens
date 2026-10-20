@@ -1,0 +1,105 @@
+id,name,hemi,base,abbrev,kind
+2,Left Frontal Pole,L,Frontal Pole,FP,cortex
+3,Right Frontal Pole,R,Frontal Pole,FP,cortex
+4,Left Insular Cortex,L,Insular Cortex,INS,cortex
+5,Right Insular Cortex,R,Insular Cortex,INS,cortex
+6,Left Superior Frontal Gyrus,L,Superior Frontal Gyrus,SFG,cortex
+7,Right Superior Frontal Gyrus,R,Superior Frontal Gyrus,SFG,cortex
+8,Left Middle Frontal Gyrus,L,Middle Frontal Gyrus,MFG,cortex
+9,Right Middle Frontal Gyrus,R,Middle Frontal Gyrus,MFG,cortex
+10,Left Inferior Frontal Gyrus pars triangularis,L,Inferior Frontal Gyrus pars triangularis,IFGt,cortex
+11,Right Inferior Frontal Gyrus pars triangularis,R,Inferior Frontal Gyrus pars triangularis,IFGt,cortex
+12,Left Inferior Frontal Gyrus pars opercularis,L,Inferior Frontal Gyrus pars opercularis,IFGo,cortex
+13,Right Inferior Frontal Gyrus pars opercularis,R,Inferior Frontal Gyrus pars opercularis,IFGo,cortex
+14,Left Precentral Gyrus,L,Precentral Gyrus,PreCG,cortex
+15,Right Precentral Gyrus,R,Precentral Gyrus,PreCG,cortex
+16,Left Temporal Pole,L,Temporal Pole,TP,cortex
+17,Right Temporal Pole,R,Temporal Pole,TP,cortex
+18,Left Superior Temporal Gyrus,L,Superior Temporal Gyrus,STG,cortex
+19,Right Superior Temporal Gyrus,R,Superior Temporal Gyrus,STG,cortex
+20,Left Middle Temporal Gyrus,L,Middle Temporal Gyrus,MTG,cortex
+21,Right Middle Temporal Gyrus,R,Middle Temporal Gyrus,MTG,cortex
+22,Left Temporooccipital Middle Temporal Gyrus,L,Temporooccipital Middle Temporal Gyrus,MTGto,cortex
+23,Right Temporooccipital Middle Temporal Gyrus,R,Temporooccipital Middle Temporal Gyrus,MTGto,cortex
+24,Left Inferior Temporal Gyrus,L,Inferior Temporal Gyrus,ITG,cortex
+25,Right Inferior Temporal Gyrus,R,Inferior Temporal Gyrus,ITG,cortex
+26,Left Temporooccipital Inferior Temporal Gyrus,L,Temporooccipital Inferior Temporal Gyrus,ITGto,cortex
+27,Right Temporooccipital Inferior Temporal Gyrus,R,Temporooccipital Inferior Temporal Gyrus,ITGto,cortex
+28,Left Postcentral Gyrus,L,Postcentral Gyrus,PostCG,cortex
+29,Right Postcentral Gyrus,R,Postcentral Gyrus,PostCG,cortex
+30,Left Superior Parietal Lobule,L,Superior Parietal Lobule,SPL,cortex
+31,Right Superior Parietal Lobule,R,Superior Parietal Lobule,SPL,cortex
+32,Left Supramarginal Gyrus,L,Supramarginal Gyrus,SMG,cortex
+33,Right Supramarginal Gyrus,R,Supramarginal Gyrus,SMG,cortex
+34,Left Angular Gyrus,L,Angular Gyrus,AG,cortex
+35,Right Angular Gyrus,R,Angular Gyrus,AG,cortex
+36,Left Superior Lateral Occipital Cortex,L,Superior Lateral Occipital Cortex,LOCs,cortex
+37,Right Superior Lateral Occipital Cortex,R,Superior Lateral Occipital Cortex,LOCs,cortex
+38,Left Inferior Lateral Occipital Cortex,L,Inferior Lateral Occipital Cortex,LOCi,cortex
+39,Right Inferior Lateral Occipital Cortex,R,Inferior Lateral Occipital Cortex,LOCi,cortex
+40,Left Intracalcarine Cortex,L,Intracalcarine Cortex,CALC,cortex
+41,Right Intracalcarine Cortex,R,Intracalcarine Cortex,CALC,cortex
+42,Left Frontal Medial Cortex,L,Frontal Medial Cortex,FMC,cortex
+43,Right Frontal Medial Cortex,R,Frontal Medial Cortex,FMC,cortex
+44,Left Supplementary Motor Cortex,L,Supplementary Motor Cortex,SMA,cortex
+45,Right Supplementary Motor Cortex,R,Supplementary Motor Cortex,SMA,cortex
+46,Left Subcallosal Cortex,L,Subcallosal Cortex,SCC,cortex
+47,Right Subcallosal Cortex,R,Subcallosal Cortex,SCC,cortex
+48,Left Paracingulate Gyrus,L,Paracingulate Gyrus,PaCG,cortex
+49,Right Paracingulate Gyrus,R,Paracingulate Gyrus,PaCG,cortex
+50,Left Anterior Cingulate Gyrus,L,Anterior Cingulate Gyrus,ACC,cortex
+51,Right Anterior Cingulate Gyrus,R,Anterior Cingulate Gyrus,ACC,cortex
+52,Left Posterior Cingulate Gyrus,L,Posterior Cingulate Gyrus,PCC,cortex
+53,Right Posterior Cingulate Gyrus,R,Posterior Cingulate Gyrus,PCC,cortex
+54,Left Precuneus,L,Precuneus,PCUN,cortex
+55,Right Precuneus,R,Precuneus,PCUN,cortex
+56,Left Cuneus,L,Cuneus,CUN,cortex
+57,Right Cuneus,R,Cuneus,CUN,cortex
+58,Left Frontal Orbital Cortex,L,Frontal Orbital Cortex,OFC,cortex
+59,Right Frontal Orbital Cortex,R,Frontal Orbital Cortex,OFC,cortex
+60,Left Anterior Parahippocampal Gyrus,L,Anterior Parahippocampal Gyrus,PHG,cortex
+61,Right Anterior Parahippocampal Gyrus,R,Anterior Parahippocampal Gyrus,PHG,cortex
+62,Left Posterior Parahippocampal Gyrus,L,Posterior Parahippocampal Gyrus,PHG,cortex
+63,Right Posterior Parahippocampal Gyrus,R,Posterior Parahippocampal Gyrus,PHG,cortex
+64,Left Lingual Gyrus,L,Lingual Gyrus,LING,cortex
+65,Right Lingual Gyrus,R,Lingual Gyrus,LING,cortex
+66,Left Temporal Fusiform Cortex,L,Temporal Fusiform Cortex,FUS,cortex
+67,Right Temporal Fusiform Cortex,R,Temporal Fusiform Cortex,FUS,cortex
+68,Left Temporal Occipital Fusiform Cortex,L,Temporal Occipital Fusiform Cortex,TOF,cortex
+69,Right Temporal Occipital Fusiform Cortex,R,Temporal Occipital Fusiform Cortex,TOF,cortex
+70,Left Occipital Fusiform Gyrus,L,Occipital Fusiform Gyrus,OFus,cortex
+71,Right Occipital Fusiform Gyrus,R,Occipital Fusiform Gyrus,OFus,cortex
+72,Left Frontal Opercular Cortex,L,Frontal Opercular Cortex,FO,cortex
+73,Right Frontal Opercular Cortex,R,Frontal Opercular Cortex,FO,cortex
+74,Left Central Opercular Cortex,L,Central Opercular Cortex,CO,cortex
+75,Right Central Opercular Cortex,R,Central Opercular Cortex,CO,cortex
+76,Left Parietal Opercular Cortex,L,Parietal Opercular Cortex,PO,cortex
+77,Right Parietal Opercular Cortex,R,Parietal Opercular Cortex,PO,cortex
+78,Left Planum Polare,L,Planum Polare,PP,cortex
+79,Right Planum Polare,R,Planum Polare,PP,cortex
+80,Left Heschl's Gyrus,L,Heschl's Gyrus,HG,cortex
+81,Right Heschl's Gyrus,R,Heschl's Gyrus,HG,cortex
+82,Left Planum Temporale,L,Planum Temporale,PT,cortex
+83,Right Planum Temporale,R,Planum Temporale,PT,cortex
+84,Left Supracalcarine Cortex,L,Supracalcarine Cortex,SCAL,cortex
+85,Right Supracalcarine Cortex,R,Supracalcarine Cortex,SCAL,cortex
+86,Left Occipital Pole,L,Occipital Pole,OP,cortex
+87,Right Occipital Pole,R,Occipital Pole,OP,cortex
+88,Left Thalamus,L,Thalamus,T,deep
+89,Left Caudate,L,Caudate,CAU,deep
+90,Left Putamen,L,Putamen,PUT,deep
+91,Left Pallidum,L,Pallidum,GP,deep
+92,Left Hippocampus,L,Hippocampus,H,deep
+93,Left Amygdala,L,Amygdala,A,deep
+94,Left Accumbens,L,Accumbens,NAC,deep
+95,Right Thalamus,R,Thalamus,T,deep
+96,Right Caudate,R,Caudate,CAU,deep
+97,Right Putamen,R,Putamen,PUT,deep
+98,Right Pallidum,R,Pallidum,GP,deep
+99,Right Hippocampus,R,Hippocampus,H,deep
+100,Right Amygdala,R,Amygdala,A,deep
+101,Right Accumbens,R,Accumbens,NAC,deep
+102,Left Pulvinar,L,Pulvinar,PUL,deep
+103,Right Pulvinar,R,Pulvinar,PUL,deep
+104,Left Anterior Thalamic Nucleus,L,Anterior Thalamic Nucleus,ANT,deep
+105,Right Anterior Thalamic Nucleus,R,Anterior Thalamic Nucleus,ANT,deep

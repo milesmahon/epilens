@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>epilens</title>
+    <link rel="stylesheet" href="planner.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three.module.min.js",
+          "three/addons/controls/OrbitControls.js": "./vendor/OrbitControls.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app">
+      <div id="main">
+        <div id="tabs"></div>
+        <div id="stage">
+          <div id="labels"></div>
+          <div id="views"></div>
+          <div id="display">
+            <label title="Cortex opacity"
+              >brain
+              <input
+                type="range"
+                id="hull"
+                name="hull"
+                min="0"
+                max="1"
+                step="0.05"
+                value="0.5"
+            /></label>
+            <label title="Deep brain structures opacity"
+              >deep structures
+              <input
+                type="range"
+                id="deep"
+                name="deep"
+                min="0"
+                max="1"
+                step="0.05"
+                value="0.5"
+            /></label>
+          </div>
+          <div id="tip"></div>
+          <div id="offline" hidden></div>
+        </div>
+        <div id="bar">
+          <div id="pick" hidden></div>
+          <div id="readAs"></div>
+          <input
+            id="cmd"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder='Describe an electrode as entry, target, e.g. "temporal pole, anterior amygdala" or "STG RHH"'
+          />
+        </div>
+      </div>
+      <aside id="side">
+        <div class="top">
+          <button id="menuBtn" title="Settings">☰</button>
+          <span class="brand">epilens</span>
+          <button id="exportBtn">Export CSV</button>
+        </div>
+        <div id="menu" hidden></div>
+        <h2>Electrodes</h2>
+        <div id="list"></div>
+      </aside>
+    </div>
+    <script type="module">
+      const fail = (e) =>
+        document.body.insertAdjacentHTML(
+          "beforeend",
+          `<pre class="err">${e.stack || e}</pre>`,
+        );
+      window.addEventListener("error", (e) => fail(e.error || e.message));
+      import("./main.js").catch(fail);
+    </script>
+  </body>
+</html>
