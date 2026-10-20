@@ -14,21 +14,19 @@ import os
 import re
 import uuid
 import zipfile
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import openpyxl
 
-from . import __version__
 from .atlas import Atlas
 
 log = logging.getLogger("epilens")
 DEFAULT_ROOT = Path.home() / "Documents" / "epilens" / "plans"
 DEFAULT_SETTINGS = {"spacing_mm": 5.0, "contact_len_mm": 2.41, "diameter_mm": 0.86}
-COLUMNS = ["electrode", "contact", "x", "y", "z", "region", "hemisphere", "entry_text", "target_text",
-           "entry_x", "entry_y", "entry_z", "target_x", "target_y", "target_z", "n_contacts", "spacing_mm",
-           "entry_abbrev", "target_abbrev"]
+COLUMNS = ["Electrode", "Contact", "MNI X", "MNI Y", "MNI Z", "Region", "Hemisphere", "Entry", "Target",
+           "Entry X", "Entry Y", "Entry Z", "Target X", "Target Y", "Target Z", "N contacts", "Spacing (mm)"]
 ID_RE = re.compile(r"[0-9a-f]{32}")
 
 
@@ -56,14 +54,8 @@ def contacts(e: dict, settings: dict) -> list[list[float]]:
 
 
 # ---------- CSV ----------
-def _one_line(s: str) -> str:
-    return " ".join(str(s).split())
-
-
 def to_csv(plan: dict, atlas: Atlas) -> str:
     buf = io.StringIO()
-    buf.write(f"# epilens plan — MNI template space, not for navigation — {_one_line(plan['name'])} — "
-              f"{date.today().isoformat()} — epilens {__version__}\n")
     w = csv.writer(buf, lineterminator="\n")
     w.writerow(COLUMNS)
     r1 = "{:.1f}".format
@@ -72,8 +64,7 @@ def to_csv(plan: dict, atlas: Atlas) -> str:
         for k, c in enumerate(contacts(e, plan["settings"]), start=1):
             w.writerow([e["name"], k, *map(r1, c), atlas.label_at(c), "L" if c[0] < 0 else "R",
                         e["entry"]["text"], e["target"]["text"], *map(r1, ex), *map(r1, tx),
-                        e["n_contacts"], f"{spacing_of(e, plan['settings']):g}",
-                        e["entry"].get("abbrev", ""), e["target"].get("abbrev", "")])
+                        e["n_contacts"], f"{spacing_of(e, plan['settings']):g}"])
     return buf.getvalue()
 
 
@@ -98,23 +89,23 @@ def _mni(xyz) -> str:
     return f"MNI ({', '.join(f'{v:g}' for v in np.round(xyz, 1))})"
 
 
-def _target(xyz, atlas: Atlas | None, text: str = "", abbrev: str = "") -> dict:
+def _target(xyz, atlas: Atlas | None, text: str = "") -> dict:
     # Target from coordinates, labelled "MNI (x, y, z) · region"
     xyz = [float(v) for v in xyz]
     region = atlas.label_at(xyz) if atlas else None
     text = text or _mni(xyz) + (f" · {region}" if region else "")
-    return {"xyz": xyz, "text": text, "abbrev": abbrev, "region": region, "mode": "coords"}
+    return {"xyz": xyz, "text": text, "abbrev": "", "region": region, "mode": "coords"}
 
 
-def _entry(xyz, target: dict, atlas: Atlas | None, text: str = "", abbrev: str = "") -> dict:
-    # Entry moved out to the brain surface along the track and named by the cortex there
-    # Entries from an epilens export (they have text) are kept as is
-    if atlas is None or text:
-        return {"xyz": [float(v) for v in xyz], "text": text or _mni(xyz), "abbrev": abbrev, "region": None, "mode": "coords"}
-    xyz = [float(v) for v in atlas.snap_entry(target["xyz"], xyz)]
+def _entry(xyz, target: dict, atlas: Atlas | None, text: str = "") -> dict:
+    # Entry moved out to the brain surface along the track and named by the cortex there.
+    # Entries from an epilens export (they have text) keep their position and text
+    if atlas is None:
+        return {"xyz": [float(v) for v in xyz], "text": text or _mni(xyz), "abbrev": "", "region": None, "mode": "coords"}
+    xyz = [float(v) for v in (xyz if text else atlas.snap_entry(target["xyz"], xyz))]
     r = atlas.surface_region(xyz)
     text = text or _mni(xyz) + (f" · {r.hemi} {r.base}" if r else "")
-    return {"xyz": xyz, "text": text, "abbrev": abbrev or (r.hemi + r.abbrev if r else ""),
+    return {"xyz": xyz, "text": text, "abbrev": r.hemi + r.abbrev if r else "",
             "region": r.name if r else None, "mode": "coords"}
 
 
@@ -166,11 +157,7 @@ def _split_labels(recs: list[dict], col: str) -> bool:
 def _from_rows(rows: list[list[str]], atlas: Atlas | None, name: str | None) -> tuple[dict, list[str]]:
     rows = [[c or "" for c in r] for r in rows]
     rows = [r for r in rows if any(c.strip() for c in r)]
-    comments = [",".join(r).strip() for r in rows if r[0].lstrip().startswith("#")]
-    rows = [r for r in rows if not r[0].lstrip().startswith("#")]
-    parts = comments[0].split(" — ") if comments else []
-    if len(parts) >= 5 and parts[0].lstrip("# ").startswith("epilens plan"):   # name may contain " — "
-        name = " — ".join(parts[2:-2]).strip() or name
+    rows = [r for r in rows if not r[0].lstrip().startswith("#")]   # older exports start with a note line
     if not rows:
         raise ValueError("The file is empty.")
     header = [_key(c) for c in rows[0]]
@@ -221,10 +208,10 @@ def _from_ends(recs, name_col, atlas):
         xyz = lambda p: [_num(r, f"{p}_{a}", nm) for a in "xyz"]
         spacing = _num(r, "spacing", nm) if r.get("spacing") else None
         n = int(_num(r, "n_contacts", nm)) if r.get("n_contacts") else None
-        target = _target(xyz("target"), atlas, r.get("target_text", ""), r.get("target_abbrev", ""))
+        target = _target(xyz("target"), atlas, r.get("target", ""))
         if target["xyz"] == xyz("entry"):
             raise ValueError(f"Electrode {nm!r}: entry and target are the same point")
-        entry = _entry(xyz("entry"), target, atlas, r.get("entry_text", ""), r.get("entry_abbrev", ""))
+        entry = _entry(xyz("entry"), target, atlas, r.get("entry", ""))
         seen[nm] = _electrode(nm, target, entry, n, spacing, atlas)
     return list(seen.values())
 

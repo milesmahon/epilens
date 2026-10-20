@@ -39,7 +39,9 @@ export function makeMenu({ plans }) {
   };
 
   async function importFile(file) {
-    const name = encodeURIComponent(file.name.replace(/\.(csv|txt|xlsx)$/i, ""));
+    const name = encodeURIComponent(
+      file.name.replace(/\.(csv|txt|xlsx)$/i, "").replace(/_\d{4}-\d{2}-\d{2}$/, ""), // export adds _YYYY-MM-DD
+    );
     const r = await fetch(`api/import?name=${name}`, {
       method: "POST",
       headers: { "Content-Type": "application/octet-stream" }, // CSV or .xlsx

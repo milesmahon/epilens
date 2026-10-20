@@ -75,7 +75,7 @@ def test_export_import(server):
     assert call(f"{url}/api/plans/{plan['id']}", "PUT", plan)[0] == 200
     code, headers, body = call(f"{url}/api/export/{plan['id']}")
     text = body.decode()
-    assert code == 200 and text.startswith("# epilens plan") and "attachment" in headers["Content-Disposition"]
+    assert code == 200 and text.startswith("Electrode,Contact,MNI X") and "attachment" in headers["Content-Disposition"]
     assert ".csv" in headers["Content-Disposition"] and "/" not in headers["Content-Disposition"].split("filename=")[1]
     code, _, body = call(f"{url}/api/import", "POST", text, ctype="text/csv")
     back = json.loads(body)
