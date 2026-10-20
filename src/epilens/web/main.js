@@ -5,6 +5,7 @@ import { makeElectrodeLayer } from "./draw.js";
 import { makeUI } from "./ui.js";
 import { makeAdjust } from "./adjust.js";
 import { makeMenu } from "./menu.js";
+import { makeSlice } from "./slice.js";
 
 const anatomy = await fetch("api/anatomy").then((r) => r.json());
 const view = initScene(document.getElementById("stage"), anatomy);
@@ -12,6 +13,7 @@ const atlas = makeAtlas(anatomy);
 const layer = makeElectrodeLayer(view, atlas);
 const plans = new Plans();
 const adjust = makeAdjust({ plans, atlas, layer, view });
+makeSlice({ view, plans });
 const ui = makeUI({ plans, atlas, layer, view, adjust });
 const menu = makeMenu({ plans });
 

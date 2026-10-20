@@ -5,9 +5,14 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 export const bytes = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 const typed = (s, T) => new T(bytes(s).buffer);
 
+// The slice plane (normal, constant) cuts away the side its normal points to
+const clip = { value: new THREE.Vector4() };
+const clipGLSL = `uniform vec4 clip;
+  bool clipped(vec3 w) { return dot(clip.xyz, clip.xyz) > 0.0 && dot(clip.xyz, w) + clip.w > 0.0; }`;
 const glassVert = `
-  varying vec3 vN; varying vec3 vV;
+  varying vec3 vN; varying vec3 vV; varying vec3 vW;
   void main() {
+    vW = position;   // meshes aren't transformed: model = world (MNI mm)
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
     vN = normalize(normalMatrix * normal); vV = normalize(-mvPosition.xyz);
     gl_Position = projectionMatrix * mvPosition;
@@ -15,8 +20,10 @@ const glassVert = `
 // Deep structures: glass that blends to opaque with colors for different structures
 const glassFrag = `
   uniform vec3 color; uniform float base; uniform float rim; uniform float opacity; uniform float solid;
-  varying vec3 vN; varying vec3 vV;
+  varying vec3 vN; varying vec3 vV; varying vec3 vW;
+  ${clipGLSL}
   void main() {
+    if (clipped(vW)) discard;
     float facing = abs(dot(normalize(vN), normalize(vV))), f = pow(1.0 - facing, 2.5);
     vec4 glassC = vec4(color * (0.55 + 0.7 * f), (base + rim * f) * opacity);
     vec4 solidC = vec4(color * (0.3 + 0.75 * facing) + 0.1 * pow(facing, 20.0), 1.0);
@@ -35,6 +42,7 @@ const glass = (color, base, rim) =>
       rim: { value: rim },
       opacity: { value: 1 },
       solid: { value: 0 },
+      clip,
     },
   });
 
@@ -54,6 +62,7 @@ const cortexFrag = `
   uniform vec3 entryAt[${MAX_ENTRIES}]; uniform vec3 entryDir[${MAX_ENTRIES}]; uniform int nEntries;
   uniform float entryR; uniform vec3 entryColor;
   varying vec3 vN; varying vec3 vV; varying float vS; varying vec3 vW;
+  ${clipGLSL}
   float entrySpot() {
     float s = 0.0;
     for (int i = 0; i < ${MAX_ENTRIES}; i++) {
@@ -65,6 +74,7 @@ const cortexFrag = `
     return s;
   }
   void main() {
+    if (clipped(vW)) discard;
     vec3 n = normalize(vN), v = normalize(vV);
     float facing = abs(dot(n, v)), f = pow(1.0 - facing, 2.5);
     vec3 glassC = color * (0.55 + 0.7 * f) * (1.0 - 0.35 * vS);
@@ -89,6 +99,7 @@ const cortexMaterial = (color) =>
       rim: { value: 0.33 },
       opacity: { value: 1 },
       solid: { value: 0 },
+      clip,
       entryAt: {
         value: Array.from({ length: MAX_ENTRIES }, () => new THREE.Vector3()),
       },
@@ -206,6 +217,11 @@ export function initScene(stage, anatomy) {
       u.nEntries.value = n;
     });
   setHull(0.5);
+  // plane: THREE.Plane, or null for no cut
+  const setClip = (plane) =>
+    plane
+      ? clip.value.set(...plane.normal.toArray(), plane.constant)
+      : clip.value.set(0, 0, 0, 0);
 
   const views = stage.querySelector("#views");
   for (const k of Object.keys(VIEWS)) {
@@ -315,6 +331,7 @@ export function initScene(stage, anatomy) {
     setHull,
     setDeep,
     setEntries,
+    setClip,
     onFrame: (cb) => callbacks.push(cb),
     toScreen,
     rayAt,

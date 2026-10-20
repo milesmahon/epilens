@@ -44,6 +44,31 @@
                 step="0.05"
                 value="0.5"
             /></label>
+            <label title="Slice views"
+              >slice
+              <select id="slice">
+                <option value="">off</option>
+                <option value="axial">axial</option>
+                <option value="coronal">coronal</option>
+                <option value="sagittal">sagittal</option>
+                <option value="probe">probe's eye</option>
+                <option value="along">view along</option>
+              </select>
+              <input
+                type="range"
+                id="sliceAt"
+                name="sliceAt"
+                title="Move the slice (mm from the target)"
+                min="-90"
+                max="90"
+                step="1"
+                value="0"
+                hidden
+              />
+            </label>
+            <button id="sliceFlip" title="Flip the slice view" hidden>
+              flip
+            </button>
           </div>
           <div id="tip"></div>
           <div id="offline" hidden></div>
