@@ -6,6 +6,7 @@ import { makeUI } from "./ui.js";
 import { makeAdjust } from "./adjust.js";
 import { makeMenu } from "./menu.js";
 import { makeSlice } from "./slice.js";
+import { makeSections } from "./sections.js";
 
 const anatomy = await fetch("api/anatomy").then((r) => r.json());
 const view = initScene(document.getElementById("stage"), anatomy);
@@ -14,6 +15,7 @@ const layer = makeElectrodeLayer(view, atlas);
 const plans = new Plans();
 const adjust = makeAdjust({ plans, atlas, layer, view });
 makeSlice({ view, plans });
+const sections = makeSections({ view, plans, atlas, anatomy });
 const ui = makeUI({ plans, atlas, layer, view, adjust });
 const menu = makeMenu({ plans });
 
@@ -73,6 +75,7 @@ window.epilens = {
   contacts,
   ui,
   layer,
+  sections,
   moveEnd: adjust.moveEnd,
   ready: true,
 };

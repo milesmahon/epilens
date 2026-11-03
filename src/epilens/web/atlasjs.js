@@ -62,6 +62,10 @@ export function makeAtlas(anatomy) {
     return last;
   };
   return {
+    labels,
+    shape: [nx, ny, nz],
+    toVoxel,
+    regions,
     labelAt,
     regionAt: (p) => regions[value(p)] || null,
     surfaceRegion,
