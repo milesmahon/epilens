@@ -1,4 +1,4 @@
-"""Workbooks for import tests"""
+"""Workbooks used by the import tests"""
 
 import io
 

@@ -32,7 +32,7 @@ def main(argv=None) -> int:
         return 0
     try:
         httpd = create_server(args.port, PlanStore(args.plans), idle=args.idle or None)
-    except OSError:  # port taken by something else
+    except OSError:  # the port is used by another program
         httpd = create_server(0, PlanStore(args.plans), idle=args.idle or None)
     url = f"http://localhost:{httpd.server_address[1]}/"
     print(f"epilens: {url}  (press Ctrl-C or Quit in the menu to stop)", flush=True)

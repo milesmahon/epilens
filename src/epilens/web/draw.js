@@ -1,14 +1,14 @@
-// Electrodes in 3D: track, contacts, entry spot, labels, drag handles, picking
+// Draws electrodes in 3D (track, contacts, entry spot, labels and drag handles) and finds what the mouse is over
 import { axis, contacts, dist } from "./plan.js";
 
 const HANDLE_R = 2.6;
-const SEL = 0x7aa2f7,
-  NORMAL = 0xd5dbe6,
-  OUTSIDE = 0xf87171,
-  TRACK = 0x7d879b,
+const SEL = 0x1565c0,
+  NORMAL = 0x37474f,
+  OUTSIDE = 0xc62828,
+  TRACK = 0x78909c,
   ENTRY = 0xe5383b;
 const ENTRY_R = 2.2; // mm
-const FISSURE_MM = 2.5; // mm: a cortex hit deeper than this is down a sulcus
+const FISSURE_MM = 2.5; // mm. If the track meets the cortex deeper than this, the entry is down a sulcus
 const VISIBLE_SCALE = 2; // draw contacts wider than real so they're visible
 
 export function makeElectrodeLayer(view, atlas) {
@@ -44,7 +44,7 @@ export function makeElectrodeLayer(view, atlas) {
       view.hull.forEach((m, i) => {
         m.material.side = sides[i];
       });
-      // down a sulcus: no spot on the surface, draw a disc instead
+      // down a sulcus there is no spot on the surface to paint, so draw a disc instead
       const ok = hit && dist(hit.point.toArray(), e.entry.xyz) <= FISSURE_MM;
       surfaceCache.set(key, ok ? { p: hit.point.clone() } : null);
     }
@@ -78,7 +78,7 @@ export function makeElectrodeLayer(view, atlas) {
         cs = contacts(e, st);
       const g = new THREE.Group();
       g.userData = { eid: e.id };
-      // track goes from the target to past the furthest of: last contact, entry, brain surface
+      // the track runs from the target to just past whichever is furthest out of the last contact, the entry and the brain surface
       const far = [
         atlas.exitPoint(e.target.xyz, u),
         e.entry.xyz,
@@ -113,7 +113,7 @@ export function makeElectrodeLayer(view, atlas) {
           new THREE.MeshStandardMaterial({
             color: !inside ? OUTSIDE : sel ? SEL : NORMAL,
             roughness: 0.45,
-            emissive: sel ? 0x1a2a50 : 0x000000,
+            emissive: sel ? 0x0d2a55 : 0x000000,
           }),
         );
         m.position.set(...c);
@@ -122,7 +122,7 @@ export function makeElectrodeLayer(view, atlas) {
         g.add(m);
         pickables.push(m);
       });
-      // Entry: a red spot painted on the cortex (scene.js), or a red disc if it's down a sulcus
+      // The entry is a red spot painted on the cortex by scene.js, or a red disc if it is down a sulcus
       const s = surfaceHit(e, u);
       if (s) spots.push({ eid: e.id, at: s.p.toArray(), dir: u });
       else {
@@ -191,11 +191,11 @@ export function makeElectrodeLayer(view, atlas) {
       .rayAt(ev)
       .intersectObjects(root.children, true)
       .filter((x) => x.object.userData.eid);
-    const handle = hits.find((x) => x.object.userData.handle); // prefer handles, they're drawn on top
+    const handle = hits.find((x) => x.object.userData.handle); // prefer handles, because they are drawn on top
     const hit = handle || hits[0];
     return hit ? hit.object.userData : null;
   }
-  // During a drag move the handle and draw a line to the other end
+  // During a drag, move the handle and draw a line to the other end
   function previewEnd(e, which, xyz) {
     for (const m of handles[which] || []) m.position.set(...xyz);
     if (which === "entry") {

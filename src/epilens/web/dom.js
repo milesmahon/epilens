@@ -6,7 +6,7 @@ export const esc = (s) =>
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
   );
 
-// Make an element: h("button", { class: "x", onclick: f }, "label")
+// Make an element. For example h("button", { class: "x", onclick: f }, "label")
 export const h = (tag, attrs = {}, ...kids) => {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {

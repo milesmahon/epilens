@@ -1,4 +1,4 @@
-// UI elements: text input box, electrode list, tabs, 3D model controls
+// The page controls: the typing bar, the electrode list, the tabs and the 3D view controls
 import { contacts, electrodeFrom, spacingOf } from "./plan.js";
 import { $, esc, h } from "./dom.js";
 
@@ -10,8 +10,8 @@ const NUDGES = [
   ["y-", "P ▼"],
   ["z+", "S ⤒"],
   ["z-", "I ⤓"],
-  ["deeper", "deeper"],
-  ["shallower", "shallower"],
+  ["deeper", "Deeper"],
+  ["shallower", "Shallower"],
 ];
 
 export function makeUI({ plans, atlas, layer, view, adjust }) {
@@ -95,7 +95,7 @@ export function makeUI({ plans, atlas, layer, view, adjust }) {
     );
   }
 
-  // resolve text to a region
+  // Work out which region the text names
   async function resolve(text, onOk, { echo = false } = {}) {
     const p = await parse(text);
     if (p.ok) return onOk(p);
@@ -208,7 +208,7 @@ export function makeUI({ plans, atlas, layer, view, adjust }) {
       h(
         "div",
         {},
-        "move ",
+        "Move ",
         h(
           "span",
           { class: "seg" },
@@ -223,7 +223,7 @@ export function makeUI({ plans, atlas, layer, view, adjust }) {
                   renderList();
                 },
               },
-              w,
+              w[0].toUpperCase() + w.slice(1),
             ),
           ),
         ),
@@ -337,11 +337,11 @@ export function makeUI({ plans, atlas, layer, view, adjust }) {
           h(
             "div",
             { class: "edit" },
-            h("span", {}, "entry"),
+            h("span", {}, "Entry"),
             field("entry", e.entry.text, (v) => editEntry(e, v)),
-            h("span", {}, "target"),
+            h("span", {}, "Target"),
             field("target", e.target.text, (v) => editTarget(e, v)),
-            h("span", {}, "contacts"),
+            h("span", {}, "Contacts"),
             h(
               "div",
               { class: "pair" },
@@ -490,7 +490,7 @@ export function makeUI({ plans, atlas, layer, view, adjust }) {
   });
   canvas.addEventListener("pointerup", (e) => {
     if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4)
-      return; // a drag, not a click
+      return; // it was a drag, not a click
     const hit = layer.pick(e);
     if (hit && hit.eid) plans.select(hit.eid);
   });

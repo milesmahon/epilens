@@ -1,4 +1,4 @@
-"""Local web server for serving the page, anatomy, parsing, plans, import/export"""
+"""Local web server. serves the page, the anatomy and the plans, parses text, and imports and exports files."""
 
 import base64
 import dataclasses
@@ -23,7 +23,7 @@ from .matcher import parse
 from .plans import PlanStore, import_file, to_csv
 
 log = logging.getLogger("epilens")
-mimetypes.add_type("text/javascript", ".js") # Windows can report .js as text/plain, which breaks ES modules
+mimetypes.add_type("text/javascript", ".js")  # Windows can report .js as text/plain, which breaks ES modules
 
 
 def _b64(a: np.ndarray) -> str:
@@ -41,7 +41,7 @@ def anatomy_payload() -> bytes:
             faces = f.astype(np.uint16) if len(v) < 65536 else f.astype(np.uint32)
             m = {"name": n, "color": str(z[f"{n}/c"]), "kind": "hull" if n == "Brain" else "deep",
                  "v": _b64(v.astype(np.float32)), "f": _b64(faces), "f32": faces.dtype == np.uint32}
-            if f"{n}/s" in z:  # sulcal depth, for shading the cortex
+            if f"{n}/s" in z:  # sulcal depth, used to shade the cortex
                 m["s"] = _b64(z[f"{n}/s"].astype(np.uint8))
             meshes.append(m)
     body = {"meshes": meshes, "labels": _b64(atlas.labels.astype(np.uint8)), "shape": list(atlas.labels.shape),
@@ -70,7 +70,7 @@ def create_app(atlas: Atlas, store: PlanStore, on_ping, on_quit) -> Flask:
 
     @app.after_request
     def no_cache(r):
-        r.headers["Cache-Control"] = "no-store" # always load the current page and scripts
+        r.headers["Cache-Control"] = "no-store"  # always load the current page and scripts
         return r
 
     @app.errorhandler(Exception)
@@ -126,7 +126,7 @@ def create_app(atlas: Atlas, store: PlanStore, on_ping, on_quit) -> Flask:
 
     @app.post("/api/import")
     def import_():
-        plan, notes = import_file(request.get_data(), atlas, request.args.get("name"))   # CSV or .xlsx
+        plan, notes = import_file(request.get_data(), atlas, request.args.get("name"))   # a CSV or .xlsx file
         return {**store.save(plan), "notes": notes}
 
     @app.post("/api/quit")
@@ -139,12 +139,12 @@ def create_app(atlas: Atlas, store: PlanStore, on_ping, on_quit) -> Flask:
 
 
 def create_server(port: int, store: PlanStore, idle: float | None = 120, atlas: Atlas | None = None):
-    # serve_forever() returns on quit or when idle
+    # serve_forever() returns when the user quits or the server has been idle too long
     last_ping = None
 
     def on_ping():
         nonlocal last_ping
-        last_ping = time.monotonic() # monotonic, so laptop sleep doesn't count as idle
+        last_ping = time.monotonic()  # monotonic, so time asleep on a laptop does not count as idle
 
     def stop_soon():
         threading.Thread(target=server.shutdown, daemon=True).start()
@@ -157,7 +157,7 @@ def create_server(port: int, store: PlanStore, idle: float | None = 120, atlas: 
 
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
     server = ThreadedWSGIServer("127.0.0.1", port, create_app(atlas or Atlas.load(), store, on_ping, stop_soon))
-    server.daemon_threads = False   # let Quit's reply finish sending before exit
+    server.daemon_threads = False   # let the reply to Quit finish sending before the server exits
     if idle:
         threading.Thread(target=watch_idle, args=(idle,), daemon=True).start()
     return server

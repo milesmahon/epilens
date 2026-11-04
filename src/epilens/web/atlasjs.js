@@ -30,7 +30,7 @@ export function makeAtlas(anatomy) {
         ? "white matter"
         : regions[v].name;
   };
-  // Nearest cortical region within `radius` voxels. Searches in the same order as atlas.py
+  // Find the nearest cortical region, searching up to `radius` voxels away. Searches in the same order as atlas.py
   const surfaceRegion = (p, radius = 3) => {
     const [i0, j0, k0] = voxel(p);
     const P = new THREE.Vector3(...p),
@@ -51,7 +51,7 @@ export function makeAtlas(anatomy) {
     return best;
   };
   const inside = (p) => value(p) > 0;
-  // Last point inside the brain going from p along u
+  // The last point still inside the brain, going from p in direction u
   const exitPoint = (p, u) => {
     let last = p;
     for (let s = 0.5; s < 300; s += 0.5) {

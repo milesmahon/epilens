@@ -1,4 +1,4 @@
-// Move electrode ends: drag handles in 3D, nudge buttons
+// Moving electrode ends by dragging the handles in 3D or with the nudge buttons
 import { axis, dist } from "./plan.js";
 
 const MIN_LENGTH = 1; // mm
@@ -18,7 +18,7 @@ export function makeAdjust({ plans, atlas, layer, view }) {
             d.map((v) => v / n),
           )
         : p;
-    const xyz = dist(s, target) >= MIN_LENGTH ? s : p; // target outside the brain: leave the entry alone
+    const xyz = dist(s, target) >= MIN_LENGTH ? s : p; // if the target is outside the brain, leave the entry where it is
     const r = atlas.surfaceRegion(xyz);
     return {
       ...e.entry,
@@ -46,7 +46,7 @@ export function makeAdjust({ plans, atlas, layer, view }) {
     const other = which === "target" ? e.entry.xyz : e.target.xyz;
     let p = xyz.map(Number);
     if (!(dist(p, other) >= MIN_LENGTH)) {
-      // too short: keep the direction, MIN_LENGTH apart
+      // too short, so keep the direction and put the ends MIN_LENGTH apart
       const u = axis(e),
         sign = which === "target" ? -1 : 1;
       p = other.map((v, i) => v + sign * MIN_LENGTH * u[i]);
@@ -59,7 +59,7 @@ export function makeAdjust({ plans, atlas, layer, view }) {
     );
   }
 
-  // k: "x+", "y-", ... moves `end` 1 mm; "deeper"/"shallower" slides the electrode along its track
+  // k is "x+", "y-" and so on to move `end` by 1 mm, or "deeper" or "shallower" to slide the whole electrode along its track
   function nudge(e, k, end) {
     if (k === "deeper" || k === "shallower") {
       const u = axis(e),
@@ -73,7 +73,7 @@ export function makeAdjust({ plans, atlas, layer, view }) {
     moveEnd(e.id, end, p);
   }
 
-  // drag the handle and update electrode on release
+  // Drag a handle. The electrode is only updated when the mouse is released
   const canvas = renderer.domElement,
     plane = new THREE.Plane(),
     hitPt = new THREE.Vector3();

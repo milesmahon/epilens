@@ -1,9 +1,12 @@
-"""Save plans as JSON and CSV/excel import and export
+"""Saving plans as JSON, and importing and exporting CSV and Excel files.
 
-Plan JSON format, shared with web/plan.js:
-  {id, name, created, updated, settings: {spacing_mm, contact_len_mm, diameter_mm},
-   electrodes: [{id, name, custom_name, n_contacts, spacing_mm (override or None),
-                 target: {xyz, text, abbrev}, entry: {xyz, text, abbrev}}]}
+The plan JSON format is shared with web/plan.js. A plan has:
+  id, name, created, updated
+  settings: spacing_mm, contact_len_mm, diameter_mm
+  electrodes: a list, where each electrode has
+    id, name, custom_name (true if the user renamed it), n_contacts
+    spacing_mm: its own spacing, or None to use the plan's setting
+    target and entry: each has xyz, text and abbrev
 """
 
 import csv
@@ -44,7 +47,7 @@ def spacing_of(e: dict, settings: dict) -> float:
 
 
 def contacts(e: dict, settings: dict) -> list[list[float]]:
-    # Contact positions: contact 1 on the target, then stepping toward the entry
+    # Contact 1 sits on the target. The rest follow at even spacing toward the entry
     t, en = np.asarray(e["target"]["xyz"], float), np.asarray(e["entry"]["xyz"], float)
     d = en - t
     n = np.linalg.norm(d)
@@ -53,7 +56,7 @@ def contacts(e: dict, settings: dict) -> list[list[float]]:
     return [list(map(float, t + k * s * u)) for k in range(int(e["n_contacts"]))]
 
 
-# ---------- CSV ----------
+# CSV and Excel
 def to_csv(plan: dict, atlas: Atlas) -> str:
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\n")
@@ -73,7 +76,7 @@ CONTACT_COLS = ("contact", "contact_number", "contact_no", "index")
 
 
 def _key(col: str) -> str:
-    # Column name to key: "Entry X (mm)" -> "entry_x"
+    # Turn a column name into a key, so "Entry X (mm)" becomes "entry_x"
     k = re.sub(r"[^a-z0-9]+", "_", col.strip().lower()).strip("_")
     return re.sub(r"_mm$", "", k)
 
@@ -90,7 +93,7 @@ def _mni(xyz) -> str:
 
 
 def _target(xyz, atlas: Atlas | None, text: str = "") -> dict:
-    # Target from coordinates, labelled "MNI (x, y, z) · region"
+    # Make a target from coordinates. Its label is the coordinates followed by the region
     xyz = [float(v) for v in xyz]
     region = atlas.label_at(xyz) if atlas else None
     text = text or _mni(xyz) + (f" · {region}" if region else "")
@@ -98,8 +101,8 @@ def _target(xyz, atlas: Atlas | None, text: str = "") -> dict:
 
 
 def _entry(xyz, target: dict, atlas: Atlas | None, text: str = "") -> dict:
-    # Entry moved out to the brain surface along the track and named by the cortex there.
-    # Entries from an epilens export (they have text) keep their position and text
+    # Move the entry out along the track to the brain surface and name it after the cortex there.
+    # Entries from an epilens export already have text, and they keep their position and text
     if atlas is None:
         return {"xyz": [float(v) for v in xyz], "text": text or _mni(xyz), "abbrev": "", "region": None, "mode": "coords"}
     xyz = [float(v) for v in (xyz if text else atlas.snap_entry(target["xyz"], xyz))]
@@ -110,9 +113,10 @@ def _entry(xyz, target: dict, atlas: Atlas | None, text: str = "") -> dict:
 
 
 def from_csv(text: str, atlas: Atlas | None = None, name: str | None = None) -> dict:
-    # Reads one of:
-    #   - an epilens export, or any sheet with entry_x/y/z and target_x/y/z columns
-    #   - a contact list: electrode name + x, y, z (+ contact number), or labels like "LfHH1"
+    # Reads either of these:
+    #   An epilens export, or any sheet with entry x, y, z and target x, y, z columns.
+    #   A list of contacts. Each row has an electrode name and x, y, z, and maybe a contact number.
+    #   Labels like "LfHH1" are split into the electrode and the contact number.
     return _from_rows(list(csv.reader(io.StringIO(text.lstrip("\ufeff")))), atlas, name)[0]
 
 
@@ -157,7 +161,7 @@ def _split_labels(recs: list[dict], col: str) -> bool:
 def _from_rows(rows: list[list[str]], atlas: Atlas | None, name: str | None) -> tuple[dict, list[str]]:
     rows = [[c or "" for c in r] for r in rows]
     rows = [r for r in rows if any(c.strip() for c in r)]
-    rows = [r for r in rows if not r[0].lstrip().startswith("#")]   # older exports start with a note line
+    rows = [r for r in rows if not r[0].lstrip().startswith("#")]   # skip the note line that older exports start with
     if not rows:
         raise ValueError("The file is empty.")
     header = [_key(c) for c in rows[0]]
@@ -217,8 +221,8 @@ def _from_ends(recs, name_col, atlas):
 
 
 def _from_contacts(recs, name_col, contact_col, xyz_cols, atlas, notes):
-    # Contact rows -> electrodes 
-    # A lead with a long gap between contact groups becomes one electrode per group
+    # Turn rows of contacts into electrodes.
+    # A lead with a long gap between groups of contacts becomes one electrode per group
     groups: dict[str, list] = {}
     for i, r in enumerate(recs):
         nm = r.get(name_col, "")
@@ -232,7 +236,7 @@ def _from_contacts(recs, name_col, contact_col, xyz_cols, atlas, notes):
         xyz = np.array([p for _, p in pts])
         if len(xyz) >= 3:
             s = np.linalg.svd(xyz - xyz.mean(0), compute_uv=False)
-            if np.sqrt((s[1:] ** 2).sum() / len(xyz)) > 2.0:   # mm off the best straight line
+            if np.sqrt((s[1:] ** 2).sum() / len(xyz)) > 2.0:   # how far in mm the contacts are from a straight line
                 skipped.append(f"{nm} ({len(xyz)} contacts)")
                 continue
         if re.search(r"grid|strip", nm, re.I):
@@ -242,7 +246,9 @@ def _from_contacts(recs, name_col, contact_col, xyz_cols, atlas, notes):
     if skipped:
         notes.append(f"Skipped {', '.join(skipped)}: only straight depth electrodes can be shown.")
     if atlas is not None:
-        def beyond(p, q):   # mm of brain on the line from p, away from q
+        # Contact 1 should be the deepest. The tip is the end with more brain beyond it, so each
+        # lead votes on which end is its tip, and the file is flipped if most leads say contact 1 is outermost.
+        def beyond(p, q):   # mm of brain on the line that starts at p and goes away from q
             u = (p - q) / np.linalg.norm(p - q)
             return 0.5 * sum(atlas.inside(p + s * u) for s in np.arange(0.5, 200, 0.5))
         diffs = [beyond(x[0], x[-1]) - beyond(x[-1], x[0]) for _, x in leads.values() if len(x) > 1]
@@ -252,7 +258,7 @@ def _from_contacts(recs, name_col, contact_col, xyz_cols, atlas, notes):
             notes.append("In this file contact 1 is the outermost, so each electrode's highest-numbered contact is its tip.")
     out, gapped = [], []
     for nm, (ks, xyz) in leads.items():
-        if len(xyz) == 1:   # a single contact: point it straight out laterally
+        if len(xyz) == 1:   # a single contact points straight out to the side
             target = _target(xyz[0], atlas)
             entry = xyz[0] + [10.0 if xyz[0][0] >= 0 else -10.0, 0, 0]
             out.append(_electrode(nm, target, _entry(entry, target, atlas), 1, None, atlas))
@@ -280,7 +286,7 @@ def _from_contacts(recs, name_col, contact_col, xyz_cols, atlas, notes):
     return out
 
 
-# ---------- storage ----------
+# Saving plans on disk
 class PlanStore:
     def __init__(self, root: Path | str = DEFAULT_ROOT):
         self.root = Path(root)

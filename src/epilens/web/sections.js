@@ -1,4 +1,4 @@
-// 2D sections beside the 3D view via the '2D' button
+// 2D sections shown beside the 3D view, turned on with the 2D button
 import * as THREE from "three";
 import { TARGET } from "./scene.js";
 import { axis, contacts, dist } from "./plan.js";
@@ -6,18 +6,19 @@ import { h } from "./dom.js";
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const Z = V(0, 0, 1);
-// [look, up] for each plane: we look along `look` with `up` at the top, so screen right = look x up.
-// Axial and coronal orientations are radiological (patient's right on the left); sagittal has anterior on the left
+// Each plane gives [look, up]. We look along `look` with `up` at the top of the screen, so screen right = look × up.
+// Axial and coronal are shown radiologically, with the patient's right on the left. Sagittal has anterior on the left.
 const PLANES = {
   coronal: () => [V(0, -1, 0), Z],
   axial: () => [V(0, 0, 1), V(0, 1, 0)],
   sagittal: () => [V(1, 0, 0), Z],
-  // down the track from the entry, superior at the top (anterior for a vertical track)
+  // Look down the track from the entry, with superior at the top. For a vertical track, anterior is at the top
   probe: (u) => {
     const up = Math.abs(u.dot(Z)) > 0.95 ? V(0, 1, 0) : Z.clone();
     return [u.clone().negate(), up.addScaledVector(u, -up.dot(u)).normalize()];
   },
-  // the plane holding the track and the vertical (as slice.js), seen like the nearest of coronal and sagittal
+  // The plane that contains the track and the vertical axis, the same plane slice.js uses.
+  // It is turned to match whichever of coronal or sagittal it is closer to
   along: (u) => {
     const n = u.clone().cross(Z);
     if (n.lengthSq() < 1e-6) n.crossVectors(u, V(0, 1, 0));
@@ -27,19 +28,20 @@ const PLANES = {
   },
 };
 const NAMES = {
-  coronal: "coronal",
-  axial: "axial",
-  sagittal: "sagittal",
-  probe: "probe's eye",
-  along: "view along",
+  coronal: "Coronal",
+  axial: "Axial",
+  sagittal: "Sagittal",
+  probe: "Probe's eye",
+  along: "View along",
 };
 const FOV = 190; // mm shown across the shorter side
-const SLAB = 3; // mm: electrodes this close to the plane are drawn as in it
+const SLAB = 3; // mm. Electrodes this close to the plane are drawn as if they were in it
 const SEL = "#7aa2f7",
   NORMAL = "#d5dbe6",
   OUTSIDE = "#f87171",
   ENTRY = "#e5383b",
   CURSOR = "#e0b45a";
+const FONT = `"Segoe UI", "Helvetica Neue", Arial, sans-serif`;
 const LETTER = [
   ["R", "L"],
   ["A", "P"],
@@ -54,7 +56,7 @@ const letter = (v) => {
   return LETTER[a][v.getComponent(a) > 0 ? 0 : 1];
 };
 
-// T1-like colours per voxel: white matter bright, cortex grey, deep structures tinted with their 3D colour
+// Colours per voxel that look like a T1 scan. White matter is bright, cortex is grey, and deep structures use their 3D colour
 function colourVolume(atlas, anatomy) {
   const mesh = Object.fromEntries(anatomy.meshes.map((m) => [m.name, m.color]));
   const lut = new Uint8Array(256 * 3).fill(0);
@@ -93,7 +95,7 @@ export function makeSections({ view, plans, atlas, anatomy }) {
     value: 0,
   });
   const info = h("span", { id: "secInfo" });
-  box.append(h("div", { class: "secBar" }, "cursor", at, info));
+  box.append(h("div", { class: "secBar" }, "Cursor", at, info));
   const panels = ["coronal", "axial"].map((mode, i) => {
     const pick = h(
       "select",
@@ -198,13 +200,13 @@ export function makeSections({ view, plans, atlas, anatomy }) {
     canvas.width = Math.max(1, Math.round(w * dpr));
     canvas.height = Math.max(1, Math.round(hgt * dpr));
     const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#0b0e14";
+    ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     p.frame = null;
     if (!sel || w < 2 || hgt < 2) return;
     const [look, up] = PLANES[p.pick.value](sel.u);
     const right = look.clone().cross(up);
-    // centred on the middle of the brain, as seen in this plane
+    // centred on the middle of the brain as seen in this plane
     const C = TARGET.clone().addScaledVector(
       look,
       sel.P.clone().sub(TARGET).dot(look),
@@ -220,7 +222,7 @@ export function makeSections({ view, plans, atlas, anatomy }) {
     };
     p.frame = { world };
 
-    // Atlas image with one sample per CSS pixel (trilinear)
+    // Draw the atlas image with one trilinear sample per CSS pixel
     const img = new ImageData(w, hgt),
       px = img.data;
     const o = world(0.5, 0.5).applyMatrix4(atlas.toVoxel),
@@ -269,9 +271,9 @@ export function makeSections({ view, plans, atlas, anatomy }) {
     ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
     ctx.scale(dpr, dpr);
 
-    // show selected electrode in full and contacts of others if they're within the plane
+    // Show the selected electrode in full, and other electrodes' contacts only where they are in the plane
     const st = plans.current.settings;
-    ctx.font = "12px system-ui, sans-serif";
+    ctx.font = `14px ${FONT}`;
     ctx.lineCap = "round";
     for (const e of plans.current.electrodes) {
       const isSel = e.id === sel.e.id,
@@ -337,8 +339,8 @@ export function makeSections({ view, plans, atlas, anatomy }) {
     ctx.lineTo(c[0], c[1] + 9);
     ctx.stroke();
     // orientation letters
-    ctx.fillStyle = "#8592a6";
-    ctx.font = "600 13px system-ui, sans-serif";
+    ctx.fillStyle = "#aab4c2";
+    ctx.font = `600 15px ${FONT}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(letter(up), w / 2, 40);
@@ -350,7 +352,7 @@ export function makeSections({ view, plans, atlas, anatomy }) {
   return { panels, at };
 }
 
-// [t0, t1] of a segment whose distance from the plane goes d0 -> d1, where |d| <= SLAB
+// A segment's distance from the plane goes from d0 to d1. Return [t0, t1], the part of it where |d| <= SLAB
 function inSlab(d0, d1) {
   if (Math.abs(d1 - d0) < 1e-9) return Math.abs(d0) <= SLAB ? [0, 1] : [1, 0];
   const a = (-SLAB - d0) / (d1 - d0),

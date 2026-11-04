@@ -1,23 +1,23 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-// Glass-brain scene (shader, lighting and views from lens/viewer.js)
+// The glass brain scene. The shaders, lighting and views started as copies from lens/viewer.js
 export const bytes = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 const typed = (s, T) => new T(bytes(s).buffer);
 
-// The slice plane (normal, constant) cuts away the side its normal points to
+// The slice plane, stored as (normal, constant). It cuts away the side its normal points to
 const clip = { value: new THREE.Vector4() };
 const clipGLSL = `uniform vec4 clip;
   bool clipped(vec3 w) { return dot(clip.xyz, clip.xyz) > 0.0 && dot(clip.xyz, w) + clip.w > 0.0; }`;
 const glassVert = `
   varying vec3 vN; varying vec3 vV; varying vec3 vW;
   void main() {
-    vW = position;   // meshes aren't transformed: model = world (MNI mm)
+    vW = position;   // meshes aren't transformed, so model space is world space (MNI mm)
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
     vN = normalize(normalMatrix * normal); vV = normalize(-mvPosition.xyz);
     gl_Position = projectionMatrix * mvPosition;
   }`;
-// Deep structures: glass that blends to opaque with colors for different structures
+// Deep structures are coloured glass. The slider blends them from see-through to solid
 const glassFrag = `
   uniform vec3 color; uniform float base; uniform float rim; uniform float opacity; uniform float solid;
   varying vec3 vN; varying vec3 vV; varying vec3 vW;
@@ -25,7 +25,7 @@ const glassFrag = `
   void main() {
     if (clipped(vW)) discard;
     float facing = abs(dot(normalize(vN), normalize(vV))), f = pow(1.0 - facing, 2.5);
-    vec4 glassC = vec4(color * (0.55 + 0.7 * f), (base + rim * f) * opacity);
+    vec4 glassC = vec4(color * (1.0 - 0.2 * f), (base + rim * f) * opacity);
     vec4 solidC = vec4(color * (0.3 + 0.75 * facing) + 0.1 * pow(facing, 20.0), 1.0);
     gl_FragColor = mix(glassC, solidC, solid);
   }`;
@@ -52,7 +52,7 @@ const cortexVert = `
   attribute float sulc;
   varying vec3 vN; varying vec3 vV; varying float vS; varying vec3 vW;
   void main() {
-    vW = position;   // the mesh isn't transformed: model = world (MNI mm)
+    vW = position;   // the mesh isn't transformed, so model space is world space (MNI mm)
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
     vN = normalize(normalMatrix * normal); vV = normalize(-mvPosition.xyz); vS = clamp(sulc / 10.0, 0.0, 1.0);
     gl_Position = projectionMatrix * mvPosition;
@@ -77,8 +77,8 @@ const cortexFrag = `
     if (clipped(vW)) discard;
     vec3 n = normalize(vN), v = normalize(vV);
     float facing = abs(dot(n, v)), f = pow(1.0 - facing, 2.5);
-    vec3 glassC = color * (0.55 + 0.7 * f) * (1.0 - 0.35 * vS);
-    float glassA = (base + rim * f) * opacity * (1.0 - 0.4 * vS);
+    vec3 glassC = color * (1.0 - 0.25 * f) * (1.0 - 0.3 * vS);
+    float glassA = (base + rim * f) * opacity;
     vec3 albedo = mix(vec3(0.86, 0.84, 0.82), vec3(0.42, 0.40, 0.40), vS);
     vec3 solidC = albedo * (0.28 + 0.72 * facing) + 0.08 * pow(facing, 24.0);
     vec4 c = vec4(mix(glassC, solidC, solid), mix(glassA, 1.0, solid));
@@ -86,6 +86,8 @@ const cortexFrag = `
     vec4 red = vec4(entryColor * mix(1.0, 0.45 + 0.55 * facing, solid), mix(0.9, 1.0, solid));
     gl_FragColor = mix(c, red, spot);
   }`;
+// The see-through cortex is drawn in dark ink so its outline shows on the light background
+const CORTEX_INK = 0x2f3946;
 const cortexMaterial = (color) =>
   new THREE.ShaderMaterial({
     vertexShader: cortexVert,
@@ -95,8 +97,8 @@ const cortexMaterial = (color) =>
     side: THREE.DoubleSide,
     uniforms: {
       color: { value: new THREE.Color(color) },
-      base: { value: 0.015 },
-      rim: { value: 0.33 },
+      base: { value: 0.01 },
+      rim: { value: 0.5 },
       opacity: { value: 1 },
       solid: { value: 0 },
       clip,
@@ -131,7 +133,7 @@ export function initScene(stage, anatomy) {
     preserveDrawingBuffer: true,
   });
   renderer.setPixelRatio(window.devicePixelRatio);
-  renderer.setClearColor(0x0b0e14);
+  renderer.setClearColor(0xf3f4f6);
   stage.prepend(renderer.domElement);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(32, 1, 1, 3000);
@@ -185,7 +187,7 @@ export function initScene(stage, anatomy) {
       );
     const mesh = new THREE.Mesh(
       g,
-      isHull ? cortexMaterial(m.color) : glass(m.color, 0.1, 0.55),
+      isHull ? cortexMaterial(CORTEX_INK) : glass(m.color, 0.3, 0.5),
     );
     mesh.renderOrder = isHull ? 3 : 2;
     mesh.userData = { name: m.name };
@@ -205,7 +207,7 @@ export function initScene(stage, anatomy) {
     });
   const setHull = (v) => setGlass(hull, v, { cull: true });
   const setDeep = (v) => setGlass(deep, v, { cull: false });
-  // spots: [{ at: [x, y, z], dir: unit vector along the track }], painted by cortexFrag
+  // spots is a list of { at: [x, y, z], dir: unit vector along the track }. cortexFrag paints them
   const setEntries = (spots) =>
     hull.forEach((m) => {
       const u = m.material.uniforms,
@@ -217,7 +219,7 @@ export function initScene(stage, anatomy) {
       u.nEntries.value = n;
     });
   setHull(0.5);
-  // plane: THREE.Plane, or null for no cut
+  // plane is a THREE.Plane, or null for no cut
   const setClip = (plane) =>
     plane
       ? clip.value.set(...plane.normal.toArray(), plane.constant)
@@ -245,7 +247,7 @@ export function initScene(stage, anatomy) {
   hullIn.addEventListener("input", () => setHull(+hullIn.value));
   deepIn.addEventListener("input", () => setDeep(+deepIn.value));
 
-  // Orientation letters at the view's edges (as on scans)
+  // Orientation letters at the edges of the view, as on scans
   const LETTER = [
     ["R", "L"],
     ["A", "P"],
@@ -260,7 +262,7 @@ export function initScene(stage, anatomy) {
     }),
   );
   const letter = (v) => {
-    // the letter of the axis v mostly points along
+    // the letter for the axis that v points along the most
     const a = [0, 1, 2].reduce(
       (m, i) =>
         Math.abs(v.getComponent(i)) > Math.abs(v.getComponent(m)) ? i : m,
@@ -299,7 +301,7 @@ export function initScene(stage, anatomy) {
   }
   requestAnimationFrame(frame);
 
-  // world point -> CSS pixels in the stage; null when behind the camera
+  // Convert a world point to CSS pixels in the stage. Returns null when the point is behind the camera
   const toScreen = (p) => {
     const v = new THREE.Vector3(...p).project(camera);
     if (v.z > 1) return null;

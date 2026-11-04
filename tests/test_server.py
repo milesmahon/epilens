@@ -130,7 +130,7 @@ def test_quit(tmp_path):
 
 
 def test_idle_survives_wall_clock_jump(tmp_path, monkeypatch):
-    # Laptop sleep makes the wall clock jump; the server shouldn't count that as idle
+    # When a laptop sleeps the wall clock jumps forward. The server should not count that time as idle
     import epilens.server as srv
     httpd = create_server(0, PlanStore(tmp_path), idle=5)
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -155,9 +155,9 @@ def raw(port, method, path, headers, body=b""):
 def test_other_websites_are_refused(server):
     url, httpd, _ = server
     port = httpd.server_address[1]
-    # DNS rebinding: a foreign Host name can't read plans
+    # Guard against DNS rebinding. A request with another Host name can't read plans
     assert raw(port, "GET", "/api/plans", {"Host": f"evil.example:{port}"})[0] == 403
-    # a page on another site can't stop epilens or plant a plan
+    # a page on another site can't stop epilens or add a plan
     assert raw(port, "POST", "/api/quit", {"Host": f"127.0.0.1:{port}", "Origin": "https://evil.example",
                                            "Content-Type": "text/plain"}, b"{}")[0] == 403
     assert raw(port, "POST", "/api/import", {"Host": f"localhost:{port}", "Origin": "null",

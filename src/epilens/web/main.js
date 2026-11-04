@@ -26,7 +26,7 @@ plans.onChange(() => {
 });
 await plans.load();
 
-// Ping the server so it stays up. Show a banner if it's unreachable or a save fails, and retry unsaved plans
+// Ping the server so it stays running. Show a banner if it can't be reached or a save fails, and retry unsaved plans
 const banner = document.getElementById("offline");
 let online = true;
 function showStatus() {
@@ -51,7 +51,7 @@ async function ping() {
 }
 ping();
 
-// Only the newest tab is live
+// Only the newest browser tab can make changes. Older tabs pause
 const channel = new BroadcastChannel("epilens");
 channel.onmessage = (ev) => {
   if (ev.data !== "took-over" || plans.paused) return;

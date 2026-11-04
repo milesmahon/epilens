@@ -1,4 +1,4 @@
-// ☰ menu (hardware, import, quit), file drop, and Export CSV
+// The settings menu (hardware, import and quit), dropping files on the page, and Export CSV
 import { $, h } from "./dom.js";
 
 export function makeMenu({ plans }) {
@@ -40,7 +40,7 @@ export function makeMenu({ plans }) {
 
   async function importFile(file) {
     const name = encodeURIComponent(
-      file.name.replace(/\.(csv|txt|xlsx)$/i, "").replace(/_\d{4}-\d{2}-\d{2}$/, ""), // export adds _YYYY-MM-DD
+      file.name.replace(/\.(csv|txt|xlsx)$/i, "").replace(/_\d{4}-\d{2}-\d{2}$/, ""), // remove the date that export adds to the file name
     );
     const r = await fetch(`api/import?name=${name}`, {
       method: "POST",
@@ -64,7 +64,7 @@ export function makeMenu({ plans }) {
   );
   document.body.append(dropHint);
   const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
-  let depth = 0; // dragenter/leave fire for each child element
+  let depth = 0; // dragenter and dragleave fire for each child element, so count them
   document.addEventListener("dragenter", (e) => {
     if (hasFiles(e)) {
       depth++;
@@ -129,16 +129,16 @@ export function makeMenu({ plans }) {
           render();
         },
       },
-      h("option", { value: "all" }, "all electrodes in this plan"),
-      h("option", { value: "selected" }, "selected electrode only"),
+      h("option", { value: "all" }, "All electrodes in this plan"),
+      h("option", { value: "selected" }, "Selected electrode only"),
     );
     applySel.value = applyTo;
     menu.replaceChildren(
       h("h3", {}, "Electrode hardware"),
-      h("div", { class: "row" }, h("span", {}, "apply to"), applySel),
-      settingRow("spacing (mm)", "spacing_mm", 0.5),
-      settingRow("contact length (mm)", "contact_len_mm", 0.01),
-      settingRow("diameter (mm)", "diameter_mm", 0.01),
+      h("div", { class: "row" }, h("span", {}, "Apply to"), applySel),
+      settingRow("Spacing (mm)", "spacing_mm", 0.5),
+      settingRow("Contact length (mm)", "contact_len_mm", 0.01),
+      settingRow("Diameter (mm)", "diameter_mm", 0.01),
       h("h3", {}, "Plans"),
       h(
         "div",
@@ -159,7 +159,7 @@ export function makeMenu({ plans }) {
     render();
   });
 
-  // save first: the server exports the saved plan
+  // save first, because the server exports the saved plan
   $("exportBtn").addEventListener("click", async () => {
     if (!(await plans.saveNow(plans.current)))
       return alert(`Export failed: ${plans.saveError || "this tab is paused"}`);

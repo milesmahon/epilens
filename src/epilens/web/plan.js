@@ -12,7 +12,7 @@ const now = () => new Date().toISOString().slice(0, 19);
 export const spacingOf = (e, settings) => e.spacing_mm || settings.spacing_mm;
 export const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
-// unit vector from the target toward the entry
+// Unit vector from the target toward the entry
 export function axis(e) {
   const d = e.entry.xyz.map((v, i) => v - e.target.xyz[i]),
     n = Math.hypot(...d);
@@ -41,7 +41,7 @@ export function newPlan(name) {
 }
 
 export function autoName(e, plan) {
-  const base = e.entry.abbrev || e.target.abbrev || "Electrode"; // where it enters, e.g. RSTG
+  const base = e.entry.abbrev || e.target.abbrev || "Electrode"; // named after where it enters, for example RSTG
   const taken = new Set(
     plan.electrodes.filter((o) => o.id !== e.id).map((o) => o.name),
   );

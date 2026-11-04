@@ -18,8 +18,8 @@ from skimage import measure
 
 OUT = Path(__file__).parents[1] / "src" / "epilens" / "data"
 
-# HO cortical label -> (base name, abbreviation); matcher splits on commas
-# HO's anterior/posterior divisions are merged, except cingulate and parahippocampal
+# Maps each Harvard-Oxford cortical label to (base name, abbreviation). The matcher splits names on commas
+# Harvard-Oxford's anterior and posterior divisions are merged, except for the cingulate and parahippocampal gyri
 CORTEX = {
     "Frontal Pole": ("Frontal Pole", "FP"),
     "Insular Cortex": ("Insular Cortex", "INS"),
@@ -73,7 +73,7 @@ CORTEX = {
 DEEP = {"Thalamus": "T", "Caudate": "CAU", "Putamen": "PUT", "Pallidum": "GP", "Hippocampus": "H",
         "Amygdala": "A", "Accumbens": "NAC"}
 PULVINAR_AAL = ("Thal_PuI", "Thal_PuM", "Thal_PuA", "Thal_PuL")
-ANT_AAL = ("Thal_AV",) # AAL3 only has the anteroventral part of ANT
+ANT_AAL = ("Thal_AV",)  # AAL3 only has the anteroventral part of ANT
 
 DEEP_COLORS = {"Hippocampus": "#e8a33d", "Amygdala": "#d1495b", "Thalamus": "#6c8ead", "Caudate": "#8fae6b",
                "Putamen": "#5fa8a0", "Pallidum": "#9d7bb0", "Accumbens": "#c47f9a", "Lateral Ventricle": "#8a8f98"}
@@ -98,7 +98,7 @@ def build_labels():
         labels[vox] = rid
 
     cdat = np.asarray(image.load_img(cort.maps).get_fdata(), int)
-    ho_ids: dict[tuple[str, str], list[int]] = {}   # merged regions have several HO labels
+    ho_ids: dict[tuple[str, str], list[int]] = {}   # merged regions have several Harvard-Oxford labels
     for i, lab in enumerate(cort.labels):
         if lab in CORTEX:
             ho_ids.setdefault(CORTEX[lab], []).append(i)
@@ -131,7 +131,7 @@ def build_labels():
 
 
 def _mesh(mask, affine, sigma, step):
-    # Smoothed surface of a binary volume, in MNI mm (from lens/brain.py)
+    # Make a smoothed surface around a binary volume, in MNI mm. Copied from lens/brain.py
     vol = ndimage.gaussian_filter(mask.astype(np.float32), sigma)
     verts, faces, _, _ = measure.marching_cubes(vol, level=0.5, step_size=step)
     verts = verts @ affine[:3, :3].T + affine[:3, 3]
@@ -139,7 +139,7 @@ def _mesh(mask, affine, sigma, step):
 
 
 def _cortex():
-    # Folded brain surface from MNI152 gray + white matter, and sulcal depth per vertex for shading
+    # Make the folded brain surface from the MNI152 gray and white matter, with sulcal depth per vertex for shading
     gm, wm = datasets.load_mni152_gm_template(resolution=1), datasets.load_mni152_wm_template(resolution=1)
     mask = datasets.load_mni152_brain_mask(resolution=1).get_fdata() > 0
     tissue = (gm.get_fdata() + wm.get_fdata()) * mask
@@ -149,7 +149,7 @@ def _cortex():
     depth = ndimage.map_coordinates(ndimage.distance_transform_edt(envelope), ijk.T, order=1)
     verts = ijk @ gm.affine[:3, :3].T + gm.affine[:3, 3]
     a, b, c = (verts[faces[:, k]] for k in range(3))
-    if np.einsum("ij,ij->", a, np.cross(b, c)) < 0:  # faces point inward: flip them
+    if np.einsum("ij,ij->", a, np.cross(b, c)) < 0:  # the faces point inward, so flip them
         faces = faces[:, ::-1]
     return verts.astype(np.float32), faces.astype(np.uint32), np.clip(depth, 0, 255).astype(np.uint8)
 

@@ -1,4 +1,4 @@
-"""Vocabulary: each alias maps to (region base name, modifier) pairs"""
+"""Vocabulary. Each alias maps to a list of (region base name, modifier) pairs."""
 
 import csv
 import functools
@@ -7,7 +7,7 @@ from importlib import resources
 
 from .atlas import THIRDS, Atlas
 
-MODIFIERS = set(THIRDS)   # "anterior", "head", "lateral", ...
+MODIFIERS = set(THIRDS)   # "anterior", "head", "lateral", etc
 
 
 def normalize(s: str) -> str:

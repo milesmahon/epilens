@@ -1,6 +1,6 @@
-"""MNI atlas geometry
+"""Atlas lookups and geometry in MNI space.
 
-Data is prebuilt by scripts/build_atlas.py
+The data files are built ahead of time by scripts/build_atlas.py.
 """
 
 import csv
@@ -10,12 +10,13 @@ from importlib import resources
 
 import numpy as np
 
-SURFACE_MM = 4.0       # a voxel this close to the brain-mask boundary counts as "on the surface"
+SURFACE_MM = 4.0       # voxels within this many mm of the edge of the brain count as on the surface
 SURFACE_MIN_VOXELS = 20
 MAX_CONTACTS = 16
 OUTSIDE, WHITE = "outside brain", "white matter"
 
-# modifier: (axis, which third); axis "absx" = distance from midline
+# Each modifier picks one third of a region along one axis. Third 0 is the low end and 2 the high end.
+# "absx" is the distance from the midline, so medial is the third nearest the midline.
 THIRDS = {
     "anterior": ("y", 2), "head": ("y", 2), "body": ("y", 1), "posterior": ("y", 0), "tail": ("y", 0),
     "superior": ("z", 2), "inferior": ("z", 0), "medial": ("absx", 0), "lateral": ("absx", 2),
@@ -26,10 +27,10 @@ THIRDS = {
 class Region:
     id: int
     name: str     # "Right Amygdala"
-    hemi: str     # "L" | "R"
+    hemi: str     # "L" or "R"
     base: str     # "Amygdala"
-    abbrev: str   # "A" (no hemisphere letter)
-    kind: str     # "cortex" | "deep"
+    abbrev: str   # "A", without the side letter
+    kind: str     # "cortex" or "deep"
 
 
 class Atlas:
@@ -52,7 +53,7 @@ class Atlas:
         regions = [Region(int(r["id"]), r["name"], r["hemi"], r["base"], r["abbrev"], r["kind"]) for r in rows]
         return cls(labels, depth, affine, regions)
 
-    # ---------- lookup ----------
+    # Looking up what is at a point
     def region(self, base: str, hemi: str) -> Region:
         return self._by_base[(base.lower(), hemi)]
 
@@ -72,7 +73,7 @@ class Atlas:
         return 0.0 if ijk is None else float(self.depth[ijk])
 
     def surface_region(self, xyz, radius: int = 3) -> Region | None:
-        # Nearest cortical region to a point within ``radius`` voxels
+        # Find the nearest cortical region to a point, searching up to `radius` voxels away
         c = self.inv[:3, :3] @ np.asarray(xyz, float) + self.inv[:3, 3]
         ijk0 = np.rint(c).astype(int)
         A, best, best_d = self.affine, None, float("inf")
@@ -96,13 +97,13 @@ class Atlas:
         # Move the entry point along the line from target to entry until it exits the brain
         t, e = np.asarray(target, float), np.asarray(entry, float)
         s = self.exit_point(t, e - t)
-        return s if np.linalg.norm(s - t) >= 1 else e # target outside the brain: leave the entry alone
+        return s if np.linalg.norm(s - t) >= 1 else e  # if the target is outside the brain, leave the entry where it is
 
     def inside(self, xyz) -> bool:
         ijk = self._ijk(xyz)
         return ijk is not None and self.labels[ijk] > 0
 
-    # ---------- region geometry ----------
+    # Region geometry
     def _voxels(self, region: Region) -> tuple[np.ndarray, np.ndarray]:
         # World coordinates (n, 3) and depths (n,) of a region's voxels
         if region.id not in self._vox:
@@ -112,7 +113,7 @@ class Atlas:
 
     @staticmethod
     def _third(xyz: np.ndarray, modifier: str | None) -> np.ndarray:
-        # Boolean mask of voxels in the modifier's third of the region
+        # True for each voxel of the region that is in the modifier's third
         if not modifier or modifier not in THIRDS:
             return np.ones(len(xyz), bool)
         axis, k = THIRDS[modifier]

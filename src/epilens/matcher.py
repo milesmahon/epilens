@@ -19,7 +19,8 @@ FUZZY_CUTOFF, FUZZY_TIE = 0.75, 0.1
 
 _COORD = r"(-?\d+(?:\.\d+)?)"
 COORD_RE = re.compile(rf"\b(target|entry)\s*(?:at|:)?\s*\(?\s*{_COORD}\s*[, ]\s*{_COORD}\s*[, ]\s*{_COORD}\s*\)?")
-# "lateral entry" only as its own clause: "Frontal Pole, lateral entry" names the lateral third of the region
+# "lateral entry" means a lateral approach only when it is a clause on its own.
+# In "frontal pole lateral entry" it instead picks the lateral third of the frontal pole.
 LATERAL_RE = re.compile(r"\bentry\s*:?\s*(?:lateral|orthogonal)\b|\b(?:lateral|orthogonal)\s+(?:approach|trajectory)\b"
                         r"|(?:^|[,;])\s*lateral\s+entry\s*(?=$|[,;])|\borthogonal\b")
 COUNT_RE = re.compile(r"\b(\d{1,2})\s*(?:contacts?|c|ch|channels?)\b")
@@ -32,7 +33,7 @@ class End:
     text: str
     abbrev: str
     region: str | None
-    mode: str  # "region" | "through" | "lateral" | "coords"
+    mode: str  # "region", "through", "lateral" or "coords"
 
 
 @dataclass
@@ -48,23 +49,23 @@ class Parse:
     question: str | None = None
     options: list["Parse"] = field(default_factory=list)
     label: str = ""
-    text: str = ""  # the phrase this result was parsed from (options: the rewritten phrase to try)
+    text: str = ""  # the phrase this was parsed from. For an option it is the rewritten phrase to try
 
 
 @dataclass
 class _Mention:
-    cands: list[tuple[str, str | None]]  # (base, alias modifier)
+    cands: list[tuple[str, str | None]]  # (region base name, modifier that comes with the alias)
     hemi: str | None = None
     mods: list[str] = field(default_factory=list)
     role: str | None = None
     text: str = ""
-    prefixed: bool = False  # written as "rhh" (side letter glued on)
+    prefixed: bool = False  # the side letter was attached to the word, as in "rhh"
 
 
 @dataclass
 class _Fuzzy:
     span: str
-    choices: list[str]  # alias keys, best first, one per distinct region
+    choices: list[str]  # alias keys, best match first, one per region
 
 
 def _fuzzy(phrase: str, keys: list[str], cutoff: float) -> list[tuple[float, str]]:
@@ -92,7 +93,7 @@ def _scan(clause: str, table: dict, keys: list[str], unknown: list[str], fuzzy: 
     i = 0
     while i < len(toks):
         t = toks[i]
-        # longest exact alias first (multi-word aliases like "temporal pole" beat single words)
+        # Try the longest exact alias first, so "temporal pole" wins over "temporal"
         for n in range(min(6, len(toks) - i), 0, -1):
             key = " ".join(toks[i:i + n])
             if key in table and len(key) > 1:
@@ -113,12 +114,12 @@ def _scan(clause: str, table: dict, keys: list[str], unknown: list[str], fuzzy: 
                     mentions[-1].role = NOUN_CUES[t]
                 else:
                     role = NOUN_CUES[t]
-            elif len(t) > 1 and t[0] in "lr" and t[1:] in table:   # "rhh" = right + hh
+            elif len(t) > 1 and t[0] in "lr" and t[1:] in table:   # "rhh" is the right side plus the alias "hh"
                 emit(table[t[1:]], t, h=t[0].upper())
             elif t in FILLER:
                 pass
             else:
-                # fuzzy: try the longest run of plain words starting here
+                # No exact match. Try fuzzy matching on the longest run of plain words starting here
                 run = []
                 for u in toks[i:i + 4]:
                     if u in HEMI_WORDS or u in MODIFIERS or u in FILLER or u in NOUN_CUES or u in ENTRY_PRE | TARGET_PRE:
@@ -171,7 +172,7 @@ def _abbrev(region, mod: str | None, table: dict) -> str:
 
 
 def _label(hemi: str, base: str, mod: str | None) -> str:
-    return f"{hemi} {base}" + (f" ({mod})" if mod else "") # no comma: the text is re-parsed on list edits
+    return f"{hemi} {base}" + (f" ({mod})" if mod else "")  # no comma, because this text is parsed again when it is edited in the list
 
 
 def _rewrite(raw: str, phrase: str, repl: str) -> str:
@@ -216,7 +217,7 @@ def _resolve_inner(text: str, atlas: Atlas, spacing: float, depth: int) -> Parse
     unknown, fuzzy, mentions = [], [], []
     for clause in re.split(r"[,;]|\band\b", work):
         found, left = _scan(clause, table, keys, unknown, fuzzy)
-        if not found and mentions:   # ", tail" / ", anterior target": belongs to the previous region
+        if not found and mentions:   # a clause without a region, like ", tail" or ", anterior target", adds to the previous region
             last = mentions[-1]
             last.mods += [x for x in left["mods"] if x not in last.mods]
             last.hemi = last.hemi or left["hemi"]
@@ -226,7 +227,7 @@ def _resolve_inner(text: str, atlas: Atlas, spacing: float, depth: int) -> Parse
 
     ask = functools.partial(_ask, atlas=atlas, spacing=spacing, depth=depth)
 
-    # ---- a word we could not place ----
+    # A word we could not place
     if unknown and not mentions and not coords:
         word = " ".join(unknown)
         return ask(f'Didn\'t recognize "{word}"', "Did you mean…",
@@ -238,7 +239,7 @@ def _resolve_inner(text: str, atlas: Atlas, spacing: float, depth: int) -> Parse
         if p.options:
             return p
 
-    # ---- roles ----
+    # Decide which mention is the entry and which is the target
     ent = next((m for m in mentions if m.role == "entry"), None)
     tgt = next((m for m in reversed(mentions) if m.role == "target"), None)
     free = [m for m in mentions if m.role is None]
@@ -250,7 +251,7 @@ def _resolve_inner(text: str, atlas: Atlas, spacing: float, depth: int) -> Parse
         got = f"entry: {_label(ent.hemi or '?', ent.cands[0][0], None)} · " if ent else ""
         return Parse(ok=False, read_as=got + 'need a target, e.g. "right amygdala"')
 
-    # ---- sides ----
+    # Decide the sides
     t_hemi = ("L" if coords["target"][0] < 0 else "R") if "target" in coords else tgt.hemi
     e_hemi = ("L" if coords["entry"][0] < 0 else "R") if "entry" in coords else (ent.hemi if ent else None)
     t_hemi, e_hemi = t_hemi or e_hemi, e_hemi or t_hemi
@@ -258,7 +259,7 @@ def _resolve_inner(text: str, atlas: Atlas, spacing: float, depth: int) -> Parse
         what = " ".join(tgt.mods + [tgt.text]) if ent is None else tgt.text
         return ask("which side?", f'"{what}": which side?', [("Right", f"right {raw}"), ("Left", f"left {raw}")])
 
-    # ---- a target that names several parts ("fusiform gyrus"): ask which ----
+    # If the target names several parts, like "fusiform gyrus", ask which one
     if tgt is not None and "target" not in coords:
         bases, _ = _pick_base(tgt)
         if len(bases) > 1:
@@ -267,7 +268,7 @@ def _resolve_inner(text: str, atlas: Atlas, spacing: float, depth: int) -> Parse
                        [(b, _rewrite(raw, tgt.text, side + normalize(b))) for b in bases])
 
     warnings = []
-    # ---- target ----
+    # Work out the target
     if "target" in coords:
         t_xyz = np.array(coords["target"])
         t_region = atlas.label_at(t_xyz)
@@ -302,7 +303,7 @@ def _resolve_inner(text: str, atlas: Atlas, spacing: float, depth: int) -> Parse
 
         def where(r):
             return atlas.entry_point(r, mod) if atlas.reaches_surface(r) else atlas.target_point(r, mod)
-        # several candidate regions takes the one nearest the target
+        # If several regions match, use the one nearest the target
         region = min(regions, key=lambda r: float(np.linalg.norm(where(r) - t_xyz)))
         if atlas.reaches_surface(region):
             e_xyz = atlas.snap_entry(t_xyz, atlas.entry_point(region, mod))
@@ -321,7 +322,7 @@ def _resolve_inner(text: str, atlas: Atlas, spacing: float, depth: int) -> Parse
         warnings.append(f"ignored: {' '.join(unknown)}")
     default_n = atlas.fit_contacts(target.xyz, entry.xyz, spacing)
     n_text = f"{n_contacts} contacts" if n_contacts else f"{default_n} contacts (fits)"
-    name = entry.abbrev or target.abbrev or "Electrode"   # named by where it enters
+    name = entry.abbrev or target.abbrev or "Electrode"   # electrodes are named after where they enter
     return Parse(ok=True, target=target, entry=entry, n_contacts=n_contacts, default_contacts=default_n, name=name,
                  read_as=f"entry: {entry.text} · target: {target.text} · {n_text}", warnings=warnings)
 
