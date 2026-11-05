@@ -10,6 +10,12 @@ import { makeSections } from "./sections.js";
 
 const anatomy = await fetch("api/anatomy").then((r) => r.json());
 const view = initScene(document.getElementById("stage"), anatomy);
+const isPatient = anatomy.space === "patient";
+const brainNote = document.getElementById("brainNote");
+brainNote.textContent = isPatient
+  ? "Brain reconstructed from imaging"
+  : "Template brain (MNI152)";
+brainNote.classList.toggle("template", !isPatient);
 const atlas = makeAtlas(anatomy);
 const layer = makeElectrodeLayer(view, atlas);
 const plans = new Plans();

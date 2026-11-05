@@ -40,7 +40,9 @@ export function makeMenu({ plans }) {
 
   async function importFile(file) {
     const name = encodeURIComponent(
-      file.name.replace(/\.(csv|txt|xlsx)$/i, "").replace(/_\d{4}-\d{2}-\d{2}$/, ""), // remove the date that export adds to the file name
+      file.name
+        .replace(/\.(csv|txt|xlsx)$/i, "")
+        .replace(/_\d{4}-\d{2}-\d{2}$/, ""), // remove the date that export adds to the file name
     );
     const r = await fetch(`api/import?name=${name}`, {
       method: "POST",
@@ -109,17 +111,21 @@ export function makeMenu({ plans }) {
     document.body.append(h("div", { class: "stopped" }, "epilens stopped."));
   }
 
+  // file picker in the menu, used for the Import button
+  const file = h("input", {
+    type: "file",
+    accept: ".csv,text/csv,.xlsx,.xls",
+    style: "display:none",
+    onchange: (e) => {
+      if (e.target.files[0]) importFile(e.target.files[0]);
+      e.target.value = "";
+    },
+  });
+  menu.append(file);
+  $("importBtn").addEventListener("click", () => file.click());
+
   function render() {
     if (menu.hidden) return;
-    const file = h("input", {
-      type: "file",
-      accept: ".csv,text/csv,.xlsx,.xls",
-      style: "display:none",
-      onchange: (e) => {
-        if (e.target.files[0]) importFile(e.target.files[0]);
-        e.target.value = "";
-      },
-    });
     const applySel = h(
       "select",
       {
@@ -139,24 +145,39 @@ export function makeMenu({ plans }) {
       settingRow("Spacing (mm)", "spacing_mm", 0.5),
       settingRow("Contact length (mm)", "contact_len_mm", 0.01),
       settingRow("Diameter (mm)", "diameter_mm", 0.01),
-      h("h3", {}, "Plans"),
-      h(
-        "div",
-        { class: "buttons" },
-        h("button", { onclick: () => file.click() }, "Import CSV or Excel…"),
-        file,
-        h("button", { name: "quit", onclick: quit }, "Quit epilens"),
-      ),
       h(
         "div",
         { class: "note" },
-        "Plans save automatically on this computer (Documents/epilens/plans).",
+        "Plans autosave to Documents/epilens/plans on this computer.",
       ),
+      h(
+        "div",
+        { class: "buttons" },
+        h("button", { name: "quit", onclick: quit }, "Quit epilens"),
+      ),
+      file,
     );
   }
-  $("menuBtn").addEventListener("click", () => {
-    menu.hidden = !menu.hidden;
+  const menuBtn = $("menuBtn");
+  const setOpen = (open) => {
+    menu.hidden = !open;
+    menuBtn.setAttribute("aria-expanded", String(open));
     render();
+  };
+  menuBtn.addEventListener("click", () => setOpen(menu.hidden));
+  $("hardware").addEventListener("click", () => setOpen(true));
+  // close it by clicking elsewhere or with Escape
+  document.addEventListener("pointerdown", (e) => {
+    if (
+      !menu.hidden &&
+      !menu.contains(e.target) &&
+      e.target !== menuBtn &&
+      e.target.id !== "hardware"
+    )
+      setOpen(false);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !menu.hidden) setOpen(false);
   });
 
   // save first, because the server exports the saved plan

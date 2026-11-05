@@ -2,10 +2,13 @@
 import { axis, contacts, dist } from "./plan.js";
 
 const HANDLE_R = 2.6;
-const SEL = 0x1565c0,
-  NORMAL = 0x37474f,
+const SEL = () =>
+  getComputedStyle(document.documentElement)
+    .getPropertyValue("--accent")
+    .trim();
+const PLATINUM = 0x5f6c76,
+  SHAFT = 0xaab6be,
   OUTSIDE = 0xc62828,
-  TRACK = 0x78909c,
   ENTRY = 0xe5383b;
 const ENTRY_R = 2.2; // mm
 const FISSURE_MM = 2.5; // mm. If the track meets the cortex deeper than this, the entry is down a sulcus
@@ -87,33 +90,34 @@ export function makeElectrodeLayer(view, atlas) {
         dist(b, e.target.xyz) > dist(a, e.target.xyz) ? b : a,
       );
       const outer = far.map((v, i) => v + 6 * u[i]); // a little past the surface
-      const trackGeo = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(...e.target.xyz),
-        new THREE.Vector3(...outer),
-      ]);
-      const track = new THREE.Line(
-        trackGeo,
-        new THREE.LineBasicMaterial({
-          color: sel ? SEL : TRACK,
-          transparent: true,
-          opacity: sel ? 0.95 : 0.7,
-        }),
-      );
-      track.userData = { eid: e.id };
-      g.add(track);
       const r = (st.diameter_mm / 2) * VISIBLE_SCALE;
       const quat = new THREE.Quaternion().setFromUnitVectors(
         Y,
         new THREE.Vector3(...u),
       );
+      const len = dist(e.target.xyz, outer);
+      const track = new THREE.Mesh(
+        new THREE.CylinderGeometry(r * 0.62, r * 0.62, len, 12, 1),
+        new THREE.MeshStandardMaterial({
+          color: sel ? SEL() : SHAFT,
+          roughness: 0.6,
+          transparent: true,
+          opacity: sel ? 0.55 : 0.5,
+          depthWrite: false,
+        }),
+      );
+      track.position.set(...e.target.xyz.map((v, i) => (v + outer[i]) / 2));
+      track.quaternion.copy(quat);
+      track.userData = { eid: e.id };
+      g.add(track);
       cs.forEach((c, k) => {
         const inside = atlas.inside(c);
         const m = new THREE.Mesh(
-          new THREE.CylinderGeometry(r, r, st.contact_len_mm, 14),
+          new THREE.CylinderGeometry(r, r, st.contact_len_mm, 16),
           new THREE.MeshStandardMaterial({
-            color: !inside ? OUTSIDE : sel ? SEL : NORMAL,
-            roughness: 0.45,
-            emissive: sel ? 0x0d2a55 : 0x000000,
+            color: !inside ? OUTSIDE : sel ? SEL() : PLATINUM,
+            metalness: 0.35,
+            roughness: 0.32,
           }),
         );
         m.position.set(...c);
@@ -143,7 +147,7 @@ export function makeElectrodeLayer(view, atlas) {
           const ball = new THREE.Mesh(
             new THREE.SphereGeometry(HANDLE_R, 16, 12),
             new THREE.MeshBasicMaterial({
-              color: SEL,
+              color: SEL(),
               transparent: true,
               opacity: 0.18,
               depthTest: false,
@@ -154,7 +158,7 @@ export function makeElectrodeLayer(view, atlas) {
           ball.userData = { eid: e.id, handle: which };
           const ring = new THREE.Mesh(
             new THREE.TorusGeometry(HANDLE_R, 0.35, 8, 32),
-            new THREE.MeshBasicMaterial({ color: SEL, depthTest: false }),
+            new THREE.MeshBasicMaterial({ color: SEL(), depthTest: false }),
           );
           ring.position.set(...p);
           ring.renderOrder = 6;
@@ -171,7 +175,23 @@ export function makeElectrodeLayer(view, atlas) {
       el.className = "elLabel" + (sel ? " sel" : "");
       el.textContent = e.name;
       labelsEl.append(el);
-      labels.push({ el, at: outer.map((v, i) => v + 3 * u[i]) });
+      // move the selected label out so it does not cover the entry handle
+      const off = sel ? 16 : 3;
+      if (sel) {
+        const leader = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(...outer),
+            new THREE.Vector3(...outer.map((v, i) => v + (off - 3) * u[i])),
+          ]),
+          new THREE.LineBasicMaterial({
+            color: SEL(),
+            transparent: true,
+            opacity: 0.8,
+          }),
+        );
+        g.add(leader);
+      }
+      labels.push({ el, at: outer.map((v, i) => v + off * u[i]) });
     }
     view.setEntries(spots);
   }
@@ -206,7 +226,7 @@ export function makeElectrodeLayer(view, atlas) {
     if (!preview) {
       preview = new THREE.Line(
         new THREE.BufferGeometry(),
-        new THREE.LineBasicMaterial({ color: SEL, depthTest: false }),
+        new THREE.LineBasicMaterial({ color: SEL(), depthTest: false }),
       );
       preview.renderOrder = 6;
       root.add(preview);

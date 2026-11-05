@@ -1,6 +1,6 @@
-// 2D sections shown beside the 3D view, turned on with the 2D button
+// 2D sections shown beside the 3D view
 import * as THREE from "three";
-import { TARGET } from "./scene.js";
+import { TARGET, bytes } from "./scene.js";
 import { axis, contacts, dist } from "./plan.js";
 import { h } from "./dom.js";
 
@@ -36,12 +36,13 @@ const NAMES = {
 };
 const FOV = 190; // mm shown across the shorter side
 const SLAB = 3; // mm. Electrodes this close to the plane are drawn as if they were in it
-const SEL = "#7aa2f7",
-  NORMAL = "#d5dbe6",
+const css = (name) =>
+  getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const NORMAL = "#d5dbe6",
   OUTSIDE = "#f87171",
   ENTRY = "#e5383b",
   CURSOR = "#e0b45a";
-const FONT = `"Segoe UI", "Helvetica Neue", Arial, sans-serif`;
+const FONT = `"Source Sans 3", "Segoe UI", "Helvetica Neue", Arial, sans-serif`;
 const LETTER = [
   ["R", "L"],
   ["A", "P"],
@@ -56,33 +57,25 @@ const letter = (v) => {
   return LETTER[a][v.getComponent(a) > 0 ? 0 : 1];
 };
 
-// Colours per voxel that look like a T1 scan. White matter is bright, cortex is grey, and deep structures use their 3D colour
-function colourVolume(atlas, anatomy) {
-  const mesh = Object.fromEntries(anatomy.meshes.map((m) => [m.name, m.color]));
-  const lut = new Uint8Array(256 * 3).fill(0);
-  const set = (id, c) => lut.set(c, id * 3);
-  set(0, [10, 12, 16]);
-  set(1, [214, 214, 208]);
-  for (const r of Object.values(atlas.regions)) {
-    if (r.kind === "cortex") set(r.id, [118, 118, 122]);
-    else {
-      const c = new THREE.Color(mesh[r.name] || "#8a86a0");
-      set(
-        r.id,
-        [c.r, c.g, c.b].map((v) => Math.round(v * 200)),
-      );
-    }
-  }
-  const rgb = new Uint8Array(atlas.labels.length * 3);
-  atlas.labels.forEach((v, i) =>
-    rgb.set(lut.subarray(v * 3, v * 3 + 3), i * 3),
-  );
-  return rgb;
-}
-
 export function makeSections({ view, plans, atlas, anatomy }) {
-  const rgb = colourVolume(atlas, anatomy),
-    [nx, ny, nz] = atlas.shape;
+  // Template T1 is loaded the first time a section is drawn
+  let scan = null,
+    loading = false;
+  function loadScan() {
+    if (loading) return;
+    loading = true;
+    fetch("api/t1")
+      .then((r) => r.json())
+      .then((t) => {
+        scan = {
+          shape: t.shape,
+          toVoxel: new THREE.Matrix4().set(...t.affine.flat()).invert(),
+          data: bytes(t.data),
+        };
+        lastKey = ""; // redraw
+      })
+      .catch(() => (loading = false)); // try again on the next draw
+  }
   const box = document.getElementById("sections"),
     toggle = document.getElementById("split");
   const at = h("input", {
@@ -95,28 +88,30 @@ export function makeSections({ view, plans, atlas, anatomy }) {
     value: 0,
   });
   const info = h("span", { id: "secInfo" });
-  box.append(h("div", { class: "secBar" }, "Cursor", at, info));
+  const isPatient = anatomy.space === "patient";
+  box.append(
+    h(
+      "div",
+      { class: "sourceNote" + (isPatient ? "" : " template") },
+      isPatient ? "Patient T1" : "Template T1 (ICBM152)",
+    ),
+    h("div", { class: "secBar" }, "Along the lead", at, info),
+  );
   const panels = ["coronal", "axial"].map((mode, i) => {
     const pick = h(
       "select",
       { class: "secPlane", title: "Section plane" },
       ...Object.entries(NAMES).map(([k, t]) => h("option", { value: k }, t)),
     );
-    const canvas = h("canvas"),
-      hover = h("div", { class: "secHover" });
-    const el = h("div", { class: "sec", id: `sec${i}` }, canvas, pick, hover);
+    const canvas = h("canvas");
+    const el = h("div", { class: "sec", id: `sec${i}` }, canvas, pick);
     pick.value = mode;
     box.append(el);
-    const p = { el, pick, canvas, hover, frame: null };
+    const p = { el, pick, canvas, frame: null };
     canvas.addEventListener("wheel", (ev) => {
       ev.preventDefault();
       at.value = +at.value + Math.sign(-ev.deltaY) * (ev.shiftKey ? 5 : 1);
     });
-    canvas.addEventListener("mousemove", (ev) => {
-      const w = p.frame && p.frame.world(ev.offsetX, ev.offsetY);
-      hover.textContent = w ? atlas.labelAt(w.toArray()) : "";
-    });
-    canvas.addEventListener("mouseleave", () => (hover.textContent = ""));
     return p;
   });
 
@@ -188,7 +183,7 @@ export function makeSections({ view, plans, atlas, anatomy }) {
       (b, c, k) => (dist(c, P.toArray()) < dist(cs[b], P.toArray()) ? k : b),
       0,
     );
-    info.textContent = `${at.value} mm from the target · nearest contact ${near + 1} · ${atlas.labelAt(P.toArray())}`;
+    info.textContent = `${at.value} mm from the target · nearest contact ${near + 1}`;
     for (const p of panels) draw(p, { e, u, P });
   });
 
@@ -222,12 +217,17 @@ export function makeSections({ view, plans, atlas, anatomy }) {
     };
     p.frame = { world };
 
-    // Draw the atlas image with one trilinear sample per CSS pixel
+    // Draw the T1, one sample per pixel
+    if (!scan) loadScan();
     const img = new ImageData(w, hgt),
       px = img.data;
-    const o = world(0.5, 0.5).applyMatrix4(atlas.toVoxel),
-      dx = world(1.5, 0.5).applyMatrix4(atlas.toVoxel).sub(o),
-      dy = world(0.5, 1.5).applyMatrix4(atlas.toVoxel).sub(o);
+    const [nx, ny, nz] = scan ? scan.shape : [0, 0, 0],
+      vol = scan && scan.data;
+    const toVoxel = scan ? scan.toVoxel : new THREE.Matrix4();
+    const o = world(0.5, 0.5).applyMatrix4(toVoxel),
+      dx = world(1.5, 0.5).applyMatrix4(toVoxel).sub(o),
+      dy = world(0.5, 1.5).applyMatrix4(toVoxel).sub(o);
+    const at = (i, j, k) => vol[(i * ny + j) * nz + k];
     for (let y = 0; y < hgt; y++)
       for (let x = 0; x < w; x++) {
         const vx = o.x + x * dx.x + y * dy.x,
@@ -245,31 +245,28 @@ export function makeSections({ view, plans, atlas, anatomy }) {
           i >= nx - 1 ||
           j >= ny - 1 ||
           k >= nz - 1
-        ) {
-          px[q] = 10;
-          px[q + 1] = 12;
-          px[q + 2] = 16;
-          continue;
-        }
+        )
+          continue; // outside the scan: black
         const fx = vx - i,
           fy = vy - j,
           fz = vz - k;
-        for (let c = 0; c < 3; c++) {
-          const at = (a, b, d) =>
-            rgb[(((i + a) * ny + j + b) * nz + k + d) * 3 + c];
-          const c00 = at(0, 0, 0) * (1 - fz) + at(0, 0, 1) * fz,
-            c01 = at(0, 1, 0) * (1 - fz) + at(0, 1, 1) * fz,
-            c10 = at(1, 0, 0) * (1 - fz) + at(1, 0, 1) * fz,
-            c11 = at(1, 1, 0) * (1 - fz) + at(1, 1, 1) * fz;
-          px[q + c] =
+        const c00 = at(i, j, k) * (1 - fz) + at(i, j, k + 1) * fz,
+          c01 = at(i, j + 1, k) * (1 - fz) + at(i, j + 1, k + 1) * fz,
+          c10 = at(i + 1, j, k) * (1 - fz) + at(i + 1, j, k + 1) * fz,
+          c11 = at(i + 1, j + 1, k) * (1 - fz) + at(i + 1, j + 1, k + 1) * fz;
+        px[q] =
+          px[q + 1] =
+          px[q + 2] =
             (c00 * (1 - fy) + c01 * fy) * (1 - fx) +
             (c10 * (1 - fy) + c11 * fy) * fx;
-        }
       }
     const off = new OffscreenCanvas(w, hgt);
     off.getContext("2d").putImageData(img, 0, 0);
     ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
     ctx.scale(dpr, dpr);
+    // dark outline on everything drawn over the scan
+    ctx.shadowColor = "rgba(0, 0, 0, 0.9)";
+    ctx.shadowBlur = 4;
 
     // Show the selected electrode in full, and other electrodes' contacts only where they are in the plane
     const st = plans.current.settings;
@@ -277,7 +274,7 @@ export function makeSections({ view, plans, atlas, anatomy }) {
     ctx.lineCap = "round";
     for (const e of plans.current.electrodes) {
       const isSel = e.id === sel.e.id,
-        col = isSel ? SEL : NORMAL;
+        col = isSel ? css("--film") : NORMAL;
       const cs = contacts(e, st),
         last = cs[cs.length - 1];
       const tip = screen(e.target.xyz),
@@ -307,7 +304,7 @@ export function makeSections({ view, plans, atlas, anatomy }) {
         ctx.fillStyle = ctx.strokeStyle = atlas.inside(c) ? col : OUTSIDE;
         ctx.globalAlpha = inside ? 1 : 0.5;
         ctx.beginPath();
-        ctx.arc(q[0], q[1], 3, 0, 2 * Math.PI);
+        ctx.arc(q[0], q[1], isSel ? 3.5 : 3, 0, 2 * Math.PI);
         inside ? ctx.fill() : ctx.stroke();
       }
       ctx.globalAlpha = 1;
@@ -321,7 +318,9 @@ export function makeSections({ view, plans, atlas, anatomy }) {
       if (isSel || t0 < t1) {
         const [lx, ly] = isSel ? tail : lerp((t0 + t1) / 2);
         ctx.fillStyle = col;
+        if (isSel) ctx.font = `700 15px ${FONT}`;
         ctx.fillText(e.name, lx + 6, ly - 6);
+        if (isSel) ctx.font = `14px ${FONT}`;
       }
     }
     // cursor
@@ -339,7 +338,7 @@ export function makeSections({ view, plans, atlas, anatomy }) {
     ctx.lineTo(c[0], c[1] + 9);
     ctx.stroke();
     // orientation letters
-    ctx.fillStyle = "#aab4c2";
+    ctx.fillStyle = "#c9d1da";
     ctx.font = `600 15px ${FONT}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";

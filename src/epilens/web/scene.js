@@ -86,8 +86,7 @@ const cortexFrag = `
     vec4 red = vec4(entryColor * mix(1.0, 0.45 + 0.55 * facing, solid), mix(0.9, 1.0, solid));
     gl_FragColor = mix(c, red, spot);
   }`;
-// The see-through cortex is drawn in dark ink so its outline shows on the light background
-const CORTEX_INK = 0x2f3946;
+const CORTEX_INK = 0x3a5563;
 const cortexMaterial = (color) =>
   new THREE.ShaderMaterial({
     vertexShader: cortexVert,
@@ -97,8 +96,8 @@ const cortexMaterial = (color) =>
     side: THREE.DoubleSide,
     uniforms: {
       color: { value: new THREE.Color(color) },
-      base: { value: 0.01 },
-      rim: { value: 0.5 },
+      base: { value: 0.012 },
+      rim: { value: 0.42 },
       opacity: { value: 1 },
       solid: { value: 0 },
       clip,
@@ -128,12 +127,14 @@ const VIEWS = {
 };
 
 export function initScene(stage, anatomy) {
+  // transparent
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
+    alpha: true,
     preserveDrawingBuffer: true,
   });
   renderer.setPixelRatio(window.devicePixelRatio);
-  renderer.setClearColor(0xf3f4f6);
+  renderer.setClearColor(0x000000, 0);
   stage.prepend(renderer.domElement);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(32, 1, 1, 3000);
@@ -141,7 +142,7 @@ export function initScene(stage, anatomy) {
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.copy(TARGET);
   controls.enableDamping = true;
-  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xb9c6cc, 0.8));
   const headLight = new THREE.DirectionalLight(0xffffff, 1.5);
   camera.add(headLight);
   scene.add(camera);
@@ -225,25 +226,26 @@ export function initScene(stage, anatomy) {
       ? clip.value.set(...plane.normal.toArray(), plane.constant)
       : clip.value.set(0, 0, 0, 0);
 
-  const views = stage.querySelector("#views");
+  const views = document.getElementById("views");
   for (const k of Object.keys(VIEWS)) {
     const b = document.createElement("button");
     b.textContent = k;
     b.dataset.view = k;
-    b.title = {
-      L: "left",
-      R: "right",
-      A: "front",
-      P: "back",
-      S: "top",
-      I: "bottom",
-    }[k];
-    b.addEventListener("click", () => setView(k));
+    b.title = `View from the ${{ L: "left", R: "right", A: "front", P: "back", S: "top", I: "bottom" }[k]}`;
+    b.setAttribute("aria-pressed", "false");
+    b.addEventListener("click", () => {
+      setView(k);
+      for (const x of views.children)
+        x.setAttribute("aria-pressed", String(x === b));
+    });
     views.append(b);
   }
+  controls.addEventListener("start", () => {
+    for (const x of views.children) x.setAttribute("aria-pressed", "false");
+  });
 
-  const hullIn = stage.querySelector("#hull"),
-    deepIn = stage.querySelector("#deep");
+  const hullIn = document.getElementById("hull"),
+    deepIn = document.getElementById("deep");
   hullIn.addEventListener("input", () => setHull(+hullIn.value));
   deepIn.addEventListener("input", () => setDeep(+deepIn.value));
 

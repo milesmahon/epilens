@@ -24,6 +24,7 @@ from .plans import PlanStore, import_file, to_csv
 
 log = logging.getLogger("epilens")
 mimetypes.add_type("text/javascript", ".js")  # Windows can report .js as text/plain, which breaks ES modules
+mimetypes.add_type("font/woff2", ".woff2")
 
 
 def _b64(a: np.ndarray) -> str:
@@ -48,6 +49,16 @@ def anatomy_payload() -> bytes:
             "affine": atlas.affine.tolist(), "regions": [{"id": r.id, "name": r.name, "hemi": r.hemi, "base": r.base, "abbrev": r.abbrev, "kind": r.kind}
                         for r in atlas.regions],
             "version": __version__}
+    return json.dumps(body, separators=(",", ":")).encode()
+
+
+@functools.cache
+def t1_payload() -> bytes:
+    """The template T1 for the 2D sections is separate from the anatomy so it is only sent when sections are opened"""
+    with resources.as_file(resources.files("epilens") / "data" / "t1.npz") as p:
+        z = np.load(p)
+        t1, affine = z["t1"], z["affine"]
+    body = {"shape": list(t1.shape), "affine": affine.tolist(), "data": _b64(np.ascontiguousarray(t1))}
     return json.dumps(body, separators=(",", ":")).encode()
 
 
@@ -94,6 +105,10 @@ def create_app(atlas: Atlas, store: PlanStore, on_ping, on_quit) -> Flask:
     @app.get("/api/anatomy")
     def anatomy():
         return app.response_class(anatomy_payload(), mimetype="application/json")
+
+    @app.get("/api/t1")
+    def t1():
+        return app.response_class(t1_payload(), mimetype="application/json")
 
     @app.get("/api/parse")
     def parse_text():

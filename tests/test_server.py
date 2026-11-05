@@ -6,6 +6,7 @@ import time
 import urllib.error
 import urllib.request
 
+import numpy as np
 import pytest
 
 from epilens import cli
@@ -42,6 +43,18 @@ def test_anatomy(server):
     assert "Brain" in [m["name"] for m in a["meshes"]] and len(a["affine"]) == 4
     assert a["regions"][0] == {"id": 2, "name": "Left Frontal Pole", "hemi": "L", "base": "Frontal Pole", "abbrev": "FP",
                                "kind": "cortex"}
+
+
+def test_t1(server):
+    # The template T1 for 2D sections on 1 mm voxels. Tests that white matter brighter than cortex and cortex brighter than CSF
+    url, *_ = server
+    code, _, body = call(f"{url}/api/t1")
+    t = json.loads(body)
+    v = np.frombuffer(base64.b64decode(t["data"]), np.uint8).reshape(t["shape"])
+    to_voxel = np.linalg.inv(np.array(t["affine"]))
+    at = lambda xyz: int(v[tuple(np.rint(to_voxel @ [*xyz, 1])[:3].astype(int))])
+    assert code == 200 and np.allclose(np.diag(t["affine"])[:3], 1)
+    assert at([28, -20, 30]) > at([55, -20, 10]) > at([0, 0, 0])   # white matter, stg, 3rd ventricle
 
 
 def test_parse(server):

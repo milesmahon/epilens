@@ -5,6 +5,15 @@
 Writes atlas.npz, meshes.npz and regions.csv on the Harvard-Oxford 2 mm MNI grid:
   labels  uint8: 0 = outside brain, 1 = brain without a named region (white matter), >= 2 = region id
   depth   uint8: mm from the voxel to the brain-mask boundary (0 outside)
+and t1.npz, the template T1 the 2D sections show:
+  t1      uint8 on a 1 mm grid cropped to the brain with its affine
+
+The T1 is the ICBM 2009a skull-stripped nonlinear symmetric template bundled with nilearn
+  Copyright (C) 1993-2009 Louis Collins, McConnell Brain Imaging Centre, Montreal Neurological Institute,
+  McGill University. Permission to use, copy, modify, and distribute this software and its documentation for any
+  purpose and without fee is hereby granted, provided that the above copyright notice appear in all copies.
+  The authors and McGill University make no representations about the suitability of this software for any
+  purpose. It is provided "as is" without express or implied warranty.
 """
 
 import csv
@@ -168,6 +177,18 @@ def build_meshes():
     return meshes
 
 
+def build_t1():
+    """The 1 mm template T1 cropped to the brain and scaled to 0-255"""
+    t1 = datasets.load_mni152_template(resolution=1)
+    a = t1.get_fdata()
+    lo, hi = (int(v) for v in np.argwhere(a > 0).min(0) - 2), (int(v) for v in np.argwhere(a > 0).max(0) + 3)
+    lo, hi = np.maximum(list(lo), 0), np.minimum(list(hi), a.shape)
+    crop = a[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]]
+    affine = t1.affine.copy()
+    affine[:3, 3] += affine[:3, :3] @ lo
+    return np.clip(crop / np.percentile(crop[crop > 0], 99.5) * 255, 0, 255).astype(np.uint8), affine
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     labels, depth, affine, regions = build_labels()
@@ -187,6 +208,8 @@ def main():
         if sulc:
             arrays[f"{n}/s"] = sulc[0]
     np.savez_compressed(OUT / "meshes.npz", **arrays)
+    t1, t1_affine = build_t1()
+    np.savez_compressed(OUT / "t1.npz", t1=t1, affine=t1_affine)
     for p in sorted(OUT.iterdir()):
         print(f"{p.name}: {p.stat().st_size / 1e6:.2f} MB")
     print(f"{len(regions)} regions")

@@ -3,15 +3,28 @@ import { contacts, electrodeFrom, spacingOf } from "./plan.js";
 import { $, esc, h } from "./dom.js";
 
 const fmt = (xyz) => xyz.map((v) => v.toFixed(1)).join(" ");
+// Show a lateral entry by its region instead of "lateral (default)"
+const entryText = (e) =>
+  e.entry.mode === "lateral" && e.entry.region
+    ? `${e.entry.region.replace(/^Right /, "R ").replace(/^Left /, "L ")} (lateral)`
+    : e.entry.text;
 const NUDGES = [
-  ["x-", "◀ L"],
-  ["x+", "R ▶"],
-  ["y+", "A ▲"],
-  ["y-", "P ▼"],
-  ["z+", "S ⤒"],
-  ["z-", "I ⤓"],
-  ["deeper", "Deeper"],
-  ["shallower", "Shallower"],
+  [
+    ["x-", "L", "left"],
+    ["x+", "R", "right"],
+  ],
+  [
+    ["y-", "P", "back"],
+    ["y+", "A", "front"],
+  ],
+  [
+    ["z-", "I", "down"],
+    ["z+", "S", "up"],
+  ],
+  [
+    ["deeper", "Deeper"],
+    ["shallower", "Shallower"],
+  ],
 ];
 
 export function makeUI({ plans, atlas, layer, view, adjust }) {
@@ -45,13 +58,16 @@ export function makeUI({ plans, atlas, layer, view, adjust }) {
     }
     if (p.ok) {
       const n = p.n_contacts
-        ? `${p.n_contacts} contacts`
-        : `${p.default_contacts} contacts (fits)`;
+        ? `${p.n_contacts}`
+        : `${p.default_contacts} to fill the track`;
       readAs.innerHTML =
-        `Read as → entry: <b>${esc(p.entry.text)}</b> · target: <b>${esc(p.target.text)}</b> · <b>${n}</b>` +
-        p.warnings.map((w) => ` <span class="w">⚠ ${esc(w)}</span>`).join("");
+        `<dl><dt>Entry</dt><dd>${esc(p.entry.text)}</dd>` +
+        `<dt>Target</dt><dd>${esc(p.target.text)}</dd>` +
+        `<dt>Contacts</dt><dd>${n}</dd></dl>` +
+        p.warnings.map((w) => `<div class="w">⚠ ${esc(w)}</div>`).join("") +
+        `<div class="key">Press Enter to add</div>`;
     } else if (p.question) {
-      readAs.innerHTML = `<span class="w">${esc(p.question)} — press Enter to choose</span>`;
+      readAs.innerHTML = `<span class="w">${esc(p.question)}</span><div class="key">Press Enter to choose</div>`;
     } else {
       readAs.innerHTML = `<span class="bad">${esc(p.read_as)}</span>`;
     }
@@ -207,8 +223,8 @@ export function makeUI({ plans, atlas, layer, view, adjust }) {
       { class: "nudge" },
       h(
         "div",
-        {},
-        "Move ",
+        { class: "which" },
+        "Move the",
         h(
           "span",
           { class: "seg" },
@@ -227,23 +243,28 @@ export function makeUI({ plans, atlas, layer, view, adjust }) {
             ),
           ),
         ),
-        " by 1 mm",
+        "1 mm",
       ),
       h(
         "div",
         { class: "grid" },
-        ...NUDGES.map(([k, label]) =>
+        ...NUDGES.map((pair) =>
           h(
-            "button",
-            {
-              "data-nudge": k,
-              onclick: () => adjust.nudge(e, k, nudgeEnd),
-              title:
-                k === "deeper" || k === "shallower"
-                  ? `slide the contacts ${k} by 1 mm`
-                  : `move the ${nudgeEnd} 1 mm`,
-            },
-            label,
+            "span",
+            { class: "pair" },
+            ...pair.map(([k, label, dir]) =>
+              h(
+                "button",
+                {
+                  "data-nudge": k,
+                  onclick: () => adjust.nudge(e, k, nudgeEnd),
+                  title: dir
+                    ? `Move the ${nudgeEnd} 1 mm ${dir}`
+                    : `Slide the contacts 1 mm ${k}`,
+                },
+                label,
+              ),
+            ),
           ),
         ),
       ),
@@ -261,13 +282,12 @@ export function makeUI({ plans, atlas, layer, view, adjust }) {
   function renderList() {
     const plan = plans.current,
       st = plan.settings;
+    $("count").textContent = plan.electrodes.length || "";
+    $("hardware").textContent =
+      `${st.spacing_mm} mm spacing · ${st.contact_len_mm} × ${st.diameter_mm} mm contacts`;
     if (!plan.electrodes.length) {
       list.replaceChildren(
-        h(
-          "div",
-          { class: "empty" },
-          'No electrodes yet. Type one in the bar below, e.g. "STG RHH".',
-        ),
+        h("div", { class: "empty" }, h("p", {}, "No electrodes.")),
       );
       return;
     }
@@ -301,12 +321,7 @@ export function makeUI({ plans, atlas, layer, view, adjust }) {
                   },
                   e.name,
                 ),
-            h(
-              "span",
-              { class: "n", title: `${e.n_contacts} contacts` },
-              String(e.n_contacts),
-            ),
-            h("span", { class: "tgt", title: e.target.text }, e.target.text),
+            h("span", { class: "gap" }),
             out.length
               ? h(
                   "span",
@@ -314,6 +329,11 @@ export function makeUI({ plans, atlas, layer, view, adjust }) {
                   "⚠",
                 )
               : null,
+            h(
+              "span",
+              { class: "n", title: `${e.n_contacts} contacts` },
+              String(e.n_contacts),
+            ),
             h(
               "button",
               {
@@ -329,6 +349,15 @@ export function makeUI({ plans, atlas, layer, view, adjust }) {
           ),
         );
         if (!sel) {
+          row.append(
+            h(
+              "div",
+              { class: "route", title: `${entryText(e)} → ${e.target.text}` },
+              entryText(e),
+              h("span", { class: "arrow" }, " → "),
+              e.target.text,
+            ),
+          );
           row.addEventListener("click", () => plans.select(e.id));
           return row;
         }

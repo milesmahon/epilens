@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>epilens</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="planner.css" />
     <script type="importmap">
       {
@@ -16,15 +17,36 @@
   </head>
   <body>
     <div id="app">
-      <div id="main">
+      <header id="head">
+        <span class="brand">epilens</span>
         <div id="tabs"></div>
-        <div id="viewer">
-        <div id="stage">
-          <div id="labels"></div>
-          <div id="views"></div>
-          <div id="display">
+        <div class="actions">
+          <button id="importBtn" title="Open a CSV or Excel plan">
+            Import…
+          </button>
+          <button id="exportBtn" title="Download this plan as CSV">
+            Export CSV
+          </button>
+          <button
+            id="menuBtn"
+            title="Electrode hardware and other settings"
+            aria-haspopup="true"
+          >
+            Settings
+          </button>
+        </div>
+        <div id="menu" hidden></div>
+      </header>
+
+      <main id="main">
+        <div id="toolbar">
+          <div class="group" role="group" aria-label="View from">
+            <span class="cap">View</span>
+            <div id="views"></div>
+          </div>
+          <div class="group" id="display">
             <label title="Cortex opacity"
-              >Brain
+              ><span class="cap">Cortex</span>
               <input
                 type="range"
                 id="hull"
@@ -34,8 +56,8 @@
                 step="0.05"
                 value="0.5"
             /></label>
-            <label title="Deep brain structures opacity"
-              >Deep structures
+            <label title="Deep structures opacity"
+              ><span class="cap">Deep</span>
               <input
                 type="range"
                 id="deep"
@@ -45,8 +67,11 @@
                 step="0.05"
                 value="0.5"
             /></label>
-            <label title="Slice views"
-              >Slice
+          </div>
+          <div class="group" id="cut">
+            <label
+              title="Cut the 3D view with a plane through the selected electrode"
+              ><span class="cap">Cut</span>
               <select id="slice">
                 <option value="">Off</option>
                 <option value="axial">Axial</option>
@@ -55,50 +80,60 @@
                 <option value="probe">Probe's eye</option>
                 <option value="along">View along</option>
               </select>
-              <input
-                type="range"
-                id="sliceAt"
-                name="sliceAt"
-                title="Move the slice (mm from the target)"
-                min="-90"
-                max="90"
-                step="1"
-                value="0"
-                hidden
-              />
             </label>
-            <button id="sliceFlip" title="Flip the slice view" hidden>
+            <input
+              type="range"
+              id="sliceAt"
+              name="sliceAt"
+              title="Move the cut (mm from the target)"
+              min="-90"
+              max="90"
+              step="1"
+              value="0"
+              hidden
+            />
+            <button
+              id="sliceFlip"
+              title="Show the other side of the cut"
+              hidden
+            >
               Flip
             </button>
-            <button id="split" title="Show 2D sections beside the 3D view">
-              2D
-            </button>
           </div>
-          <div id="tip"></div>
-          <div id="offline" hidden></div>
+          <button id="split" title="Show 2D sections beside the 3D view">
+            2D views
+          </button>
         </div>
-        <div id="sections" hidden></div>
+
+        <div id="viewer">
+          <div id="stage">
+            <div id="labels"></div>
+            <div id="brainNote" class="sourceNote"></div>
+            <div id="tip"></div>
+            <div id="offline" hidden></div>
+          </div>
+          <div id="sections" hidden></div>
+        </div>
+      </main>
+
+      <aside id="side">
+        <div class="sideHead">
+          <h2>Electrodes</h2>
+          <span id="count"></span>
         </div>
         <div id="bar">
-          <div id="pick" hidden></div>
-          <div id="readAs"></div>
           <input
             id="cmd"
             autocomplete="off"
             spellcheck="false"
-            placeholder='Describe an electrode as entry, target, e.g. "temporal pole, anterior amygdala" or "STG RHH"'
+            aria-label="Add an electrode"
+            placeholder='Add: "STG RHH" or "temporal pole, amygdala"'
           />
+          <div id="readAs"></div>
+          <div id="pick" hidden></div>
         </div>
-      </div>
-      <aside id="side">
-        <div class="top">
-          <button id="menuBtn" title="Settings">☰</button>
-          <span class="brand">epilens</span>
-          <button id="exportBtn">Export CSV</button>
-        </div>
-        <div id="menu" hidden></div>
-        <h2>Electrodes</h2>
         <div id="list"></div>
+        <button id="hardware" title="Change the electrode hardware"></button>
       </aside>
     </div>
     <script type="module">
