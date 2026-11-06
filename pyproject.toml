@@ -31,6 +31,7 @@ dev = [
 ]
 build = [
     "nilearn>=0.11",
+    "pyinstaller>=6.0",
 ]
 
 [tool.uv]
