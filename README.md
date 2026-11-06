@@ -5,7 +5,7 @@ https://github.com/user-attachments/assets/ec1042a7-53a1-4010-98a1-6cf3374ade28
 
 ## How to run
 
-Download via the [installer](https://github.com/milesmahon/epilens/releases/tag/v0.1.0) or:
+Download via the [installer](https://github.com/milesmahon/epilens/releases/latest) or:
 
 ```
 $ git clone <this repo>
