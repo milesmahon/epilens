@@ -140,6 +140,7 @@ export function makeUI({ plans, atlas, layer, view, adjust, anatomy }) {
       if (cmd.value === text) showReadAs(p);
     }, 120);
   });
+  let adding = false;
   cmd.addEventListener("keydown", (e) => {
     if (pickState && ["ArrowDown", "ArrowUp"].includes(e.key)) {
       e.preventDefault();
@@ -153,8 +154,9 @@ export function makeUI({ plans, atlas, layer, view, adjust, anatomy }) {
     if (e.key !== "Enter") return;
     e.preventDefault();
     if (pickState) return choosePick(pickState.cur);
-    if (!cmd.value.trim()) return;
+    if (!cmd.value.trim() || adding) return; // a second Enter before the first is read would add it twice
     clearTimeout(debounce);
+    adding = true;
     resolve(
       cmd.value,
       (p) => {
@@ -164,7 +166,7 @@ export function makeUI({ plans, atlas, layer, view, adjust, anatomy }) {
         hidePick();
       },
       { echo: true },
-    );
+    ).finally(() => (adding = false));
   });
 
   const outsideContacts = (e) =>

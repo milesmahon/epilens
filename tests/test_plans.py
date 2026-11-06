@@ -48,6 +48,7 @@ def test_csv_layout(plan, atlas):
 def test_csv_roundtrip(plan, atlas):
     back = from_csv(to_csv(plan, atlas), atlas, name="Pt 1")
     assert back["id"] != plan["id"] and back["name"] == "Pt 1"
+    assert len(back["electrodes"]) == len(plan["electrodes"])
     for a, b in zip(plan["electrodes"], back["electrodes"]):
         assert a["name"] == b["name"] and a["n_contacts"] == b["n_contacts"]
         assert a["custom_name"] == b["custom_name"]   # automatic names stay automatic
@@ -72,7 +73,8 @@ def test_csv_simple_entry_target_list(atlas):
     assert rhip["target"]["text"].startswith("MNI (26, -22, -12)")
     entry = rhip["entry"]   # moved out to the surface and named after the cortex there
     assert entry["xyz"] == list(atlas.snap_entry([26, -22, -12], [60, -20, -10])) and entry["xyz"][0] > 60
-    assert entry["abbrev"] == rhip["entry"]["abbrev"] and entry["abbrev"].startswith("R") and "white" not in entry["text"]
+    r = atlas.surface_region(entry["xyz"])
+    assert entry["abbrev"] == r.hemi + r.abbrev and entry["abbrev"].startswith("R") and "white" not in entry["text"]
     assert la["n_contacts"] == atlas.fit_contacts([-24, -4, -20], [-60, 0, -20], 5.0) and la["name"] == "LA"
 
 
@@ -103,6 +105,21 @@ def test_store_odd_names(tmp_path, plan):
     with pytest.raises(ValueError):
         store.save({**plan, "id": "../../evil"})
     store.delete(plan["id"])
+    assert store.list() == []
+
+
+def test_csv_formulas_not_run(plan, atlas):
+    plan["electrodes"][0]["name"] = "=HYPERLINK(1)"
+    text = to_csv(plan, atlas)
+    assert "\n'=HYPERLINK(1)," in text   # a spreadsheet shows this as text
+    assert from_csv(text, atlas)["electrodes"][0]["name"] == "=HYPERLINK(1)"
+
+
+def test_store_save_after_delete(tmp_path, plan):
+    store = PlanStore(tmp_path)
+    store.save(plan)
+    store.delete(plan["id"])
+    store.save(plan)   # an autosave that was already on its way
     assert store.list() == []
 
 

@@ -100,6 +100,19 @@ def convert_plan(plan: dict, fn: Callable[[np.ndarray], np.ndarray], atlas: Atla
 
 
 # CSV and Excel
+FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _safe(text: str) -> str:
+    # a ' in front stops Excel running text like =HYPERLINK(...) as a formula
+    return "'" + text if text.startswith(FORMULA_START) else text
+
+
+def _unsafe(text: str) -> str:
+    # undo _safe when a file we exported is imported again
+    return text[1:] if text.startswith("'") and text[1:].startswith(FORMULA_START) else text
+
+
 def to_csv(plan: dict, atlas: Atlas | None, warp: Warp | None = None) -> str:
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\n")
@@ -111,13 +124,14 @@ def to_csv(plan: dict, atlas: Atlas | None, warp: Warp | None = None) -> str:
         for k, c in enumerate(contacts(e, plan["settings"]), start=1):
             region = atlas.label_at(c) if atlas else ""
             hemi = "L" if c[0] < 0 else "R"
-            tail = [e["entry"]["text"], e["target"]["text"], *map(r1, ex), *map(r1, tx),
+            name, region = _safe(e["name"]), _safe(region)
+            tail = [_safe(e["entry"]["text"]), _safe(e["target"]["text"]), *map(r1, ex), *map(r1, tx),
                     e["n_contacts"], f"{spacing_of(e, plan['settings']):g}"]
             if patient:
                 mni = map(r1, warp.to_mni(c)) if warp else ["", "", ""]
-                w.writerow([e["name"], k, *map(r1, c), *mni, region, hemi, *tail])
+                w.writerow([name, k, *map(r1, c), *mni, region, hemi, *tail])
             else:
-                w.writerow([e["name"], k, *map(r1, c), region, hemi, *tail])
+                w.writerow([name, k, *map(r1, c), region, hemi, *tail])
     return buf.getvalue()
 
 
@@ -221,7 +235,7 @@ def _from_rows(rows: list[list[str]], atlas: Atlas | None, name: str | None) -> 
         atlas = None
         header = [c[:-len("_ac_pc")] if c.endswith("_ac_pc") else c for c in header]
         header = ["" if c.startswith("mni_") else c for c in header]
-    recs = [dict(zip(header, (c.strip() for c in r))) for r in rows[1:]]
+    recs = [dict(zip(header, (_unsafe(c.strip()) for c in r))) for r in rows[1:]]
     cols = set(header)
     name_col = next((c for c in NAME_COLS if c in cols), None)
     contact_col = next((c for c in CONTACT_COLS if c in cols), None)
@@ -349,6 +363,7 @@ class PlanStore:
     def __init__(self, root: Path | str = DEFAULT_ROOT):
         self.root = Path(root)
         self._lock = threading.Lock()
+        self._deleted = set()   # ids deleted while running
 
     def _path(self, plan_id: str) -> Path:
         if not isinstance(plan_id, str) or not ID_RE.fullmatch(plan_id):
@@ -377,6 +392,8 @@ class PlanStore:
         self.root.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".json.tmp")
         with self._lock:   # two saves of one plan at once would share the temp file
+            if plan["id"] in self._deleted:   # a save that arrives after its plan was deleted must not bring it back
+                return plan
             tmp.write_text(json.dumps(plan, ensure_ascii=False, indent=1), encoding="utf-8")
             os.replace(tmp, path)
         return plan
@@ -385,4 +402,7 @@ class PlanStore:
         return json.loads(self._path(plan_id).read_text(encoding="utf-8"))
 
     def delete(self, plan_id: str) -> None:
-        self._path(plan_id).unlink(missing_ok=True)
+        path = self._path(plan_id)
+        with self._lock:
+            self._deleted.add(plan_id)
+            path.unlink(missing_ok=True)

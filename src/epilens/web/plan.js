@@ -112,6 +112,7 @@ export class Plans {
 
   _save(plan, wait = 500) {
     if (this.paused) return;
+    this.edited = true;
     clearTimeout(this._timers[plan.id]);
     this._timers[plan.id] = setTimeout(() => this.saveNow(plan), wait);
   }
@@ -136,6 +137,7 @@ export class Plans {
       this.saveError = this.unsaved.size ? this.saveError : null;
       return true;
     } catch (err) {
+      if (!this.list.includes(plan)) return false; // closed while saving
       this.unsaved.add(plan.id);
       this.saveError = String(err.message || err);
       return false;
@@ -192,7 +194,13 @@ export class Plans {
     const i = this.list.findIndex((p) => p.id === id);
     if (i < 0) return;
     clearTimeout(this._timers[id]);
+    delete this._timers[id];
     const [plan] = this.list.splice(i, 1);
+    // a closed plan's failed save shouldn't keep the error banner up
+    if (this.unsaved.delete(id) && !this.unsaved.size) {
+      this.saveError = null;
+      this.onSaveStatus();
+    }
     if (this.paused) return;
     await fetch(`api/plans/${plan.id}`, { method: "DELETE" });
     if (!this.list.length) return this.add("Plan 1");

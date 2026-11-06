@@ -9,6 +9,31 @@ import { makeSlice } from "./slice.js";
 import { makeSections } from "./sections.js";
 
 const plans = new Plans();
+
+// Only the newest browser tab can make changes
+const channel = new BroadcastChannel("epilens");
+channel.onmessage = async (ev) => {
+  // an older tab just saved edits this tab loaded too early to see
+  if (ev.data === "saved") return plans.edited || location.reload();
+  if (ev.data !== "took-over" || plans.paused) return;
+  // send this tab's waiting edits before stopping
+  const waiting = plans.list.filter(
+    (p) => p.id in plans._timers || plans.unsaved.has(p.id),
+  );
+  const saved = await Promise.all(waiting.map((p) => plans.saveNow(p)));
+  plans.paused = true;
+  for (const t of Object.values(plans._timers)) clearTimeout(t);
+  if (saved.some(Boolean)) channel.postMessage("saved");
+  const btn = document.createElement("button");
+  btn.textContent = "Use this tab instead";
+  btn.onclick = () => location.reload();
+  const box = document.createElement("div");
+  box.className = "stopped paused";
+  box.append("epilens is open in another tab", btn);
+  document.body.append(box);
+};
+channel.postMessage("took-over");
+
 await plans.load();
 const loadedKey = brainKey(plans.current);
 const anatomy = await fetch(`api/anatomy?plan=${plans.current.id}`).then((r) =>
@@ -115,22 +140,6 @@ async function ping() {
   setTimeout(ping, ok ? 5000 : 1500);
 }
 ping();
-
-// Only the newest browser tab can make changes. Older tabs pause
-const channel = new BroadcastChannel("epilens");
-channel.onmessage = (ev) => {
-  if (ev.data !== "took-over" || plans.paused) return;
-  plans.paused = true;
-  for (const t of Object.values(plans._timers)) clearTimeout(t);
-  const btn = document.createElement("button");
-  btn.textContent = "Use this tab instead";
-  btn.onclick = () => location.reload();
-  const box = document.createElement("div");
-  box.className = "stopped paused";
-  box.append("epilens is open in another tab", btn);
-  document.body.append(box);
-};
-channel.postMessage("took-over");
 
 window.epilens = {
   view,

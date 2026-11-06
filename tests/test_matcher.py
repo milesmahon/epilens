@@ -113,8 +113,7 @@ def test_entry_only_needs_target(atlas):
 def test_defaults_sane(atlas, text):
     p = parse(text, atlas)
     assert p.ok and 1 <= p.default_contacts <= 16
-    t = np.array(p.target.xyz)
-    assert atlas.label_at(t) == atlas.label_at(p.target.xyz) != "outside brain"
+    assert atlas.label_at(p.target.xyz) != "outside brain"
 
 
 def test_target_with_several_parts_asks(atlas):

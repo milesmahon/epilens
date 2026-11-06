@@ -9,7 +9,7 @@ on:
 jobs:
   build-tauri:
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -22,7 +22,7 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
@@ -34,45 +34,62 @@ jobs:
         run: uv sync --all-groups
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
 
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: './src-tauri -> target'
 
       - name: Build Python Sidecar Binary
         run: uv run python scripts/build_sidecar.py
 
-      # a v* tag makes a draft GitHub Release; a manual run (Run workflow) only builds
+      # only builds; the release job below makes the release
       - name: Build Tauri Desktop Application
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         with:
           projectPath: './src-tauri'
-          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: 'epilens ${{ github.ref_name }}'
-          releaseBody: 'Desktop release of Epilens.'
-          releaseDraft: true
-          prerelease: false
           args: ${{ matrix.args }}
 
-      # just the installers, side by side (the .exe and .msi on Windows, the .dmg on macOS)
-      - name: Collect installers
+      # the one installer this platform makes: the .exe on Windows, the .dmg on macOS
+      - name: Collect installer
         shell: bash
         run: |
           mkdir -p installers
           find src-tauri/target -path '*/release/bundle/*' \
-            \( -name '*.exe' -o -name '*.msi' -o -name '*.dmg' \) -exec cp {} installers/ \;
+            \( -name '*.exe' -o -name '*.dmg' \) -exec cp {} installers/ \;
           ls -l installers
 
-      # they also go on the run's page under Artifacts
-      - name: Upload installers
-        uses: actions/upload-artifact@v7
+      # on the run's page under Artifacts, as the file itself (not zipped)
+      - name: Upload installer
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: epilens-${{ matrix.platform }}
-          path: installers/
+          path: installers/*
+          archive: false
           if-no-files-found: error
+
+  # a v* tag makes a draft GitHub Release holding just the installers; a manual run (Run workflow) only builds
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build-tauri
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: installers
+          merge-multiple: true
+
+      - name: Make draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          ls -l installers
+          gh release create "$TAG" installers/* --repo "$GITHUB_REPOSITORY" --draft \
+            --title "epilens $TAG" --notes "Desktop release of Epilens."
