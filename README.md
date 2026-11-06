@@ -1,7 +1,7 @@
 # epilens
 Visualize stereo-EEG electrodes on a 3D model brain.
 
-https://github.com/user-attachments/assets/a18d5e0d-1877-441a-81ac-36856ed138a8
+https://github.com/user-attachments/assets/ec1042a7-53a1-4010-98a1-6cf3374ade28
 
 ## How to run
 ```
