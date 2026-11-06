@@ -90,7 +90,8 @@ export function makeMenu({ plans, anatomy }) {
       );
     const { notes, ...plan } = body;
     plans.add(null, plan);
-    if (notes?.length) await notify(`Imported ${file.name}.\n\n${notes.join("\n\n")}`);
+    if (notes?.length)
+      await notify(`Imported ${file.name}.\n\n${notes.join("\n\n")}`);
   }
 
   const dropHint = h("div", { class: "drop", hidden: "" }, DROP_TEXT);
@@ -276,7 +277,7 @@ export function makeMenu({ plans, anatomy }) {
       h(
         "div",
         { class: "note" },
-        "Not a medical device. Check every plan against the patient's own imaging.",
+        "Not a medical device. Check plans against patient imaging.",
       ),
       h(
         "div",
@@ -311,8 +312,19 @@ export function makeMenu({ plans, anatomy }) {
   // save first, because the server exports the saved plan
   $("exportBtn").addEventListener("click", async () => {
     if (!(await plans.saveNow(plans.current)))
-      return notify(`Export failed: ${plans.saveError || "this tab is paused"}`);
-    h("a", { href: `api/export/${plans.current.id}`, download: "" }).click();
+      return notify(
+        `Export failed: ${plans.saveError || "this tab is paused"}`,
+      );
+    try {
+      const r = await fetch(`api/export/${plans.current.id}`, {
+        method: "POST",
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+      notify(`Saved CSV to:\n${body.path}`);
+    } catch (err) {
+      notify(`Export failed: ${err.message || err}`);
+    }
   });
 
   return { render, attachPatient };

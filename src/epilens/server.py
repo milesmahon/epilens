@@ -11,6 +11,7 @@ import threading
 import time
 from datetime import date
 from importlib import resources
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -47,6 +48,25 @@ def t1_payload() -> bytes:
 def _safe_filename(name: str) -> str:
     s = re.sub(r"[^A-Za-z0-9._ -]+", "_", name).strip(" ._") or "plan"
     return f"{s[:60]}_{date.today().isoformat()}.csv"
+
+
+def export_dir() -> Path:
+    downloads = Path.home() / "Downloads"
+    return downloads if downloads.is_dir() else Path.home()
+
+
+def _write_new(folder: Path, filename: str, text: str) -> Path:
+    # never overwrite: "x.csv", then "x (2).csv", ...
+    stem, suffix = filename.rsplit(".", 1)
+    for n in range(1, 1000):
+        path = folder / (filename if n == 1 else f"{stem} ({n}).{suffix}")
+        try:
+            with open(path, "x", encoding="utf-8", newline="") as f:
+                f.write(text)
+            return path
+        except FileExistsError:
+            continue
+    raise ValueError(f"too many files named {filename} in {folder}")
 
 
 def _missing_payload(atlas: Atlas) -> bytes:
@@ -162,7 +182,7 @@ def create_app(atlas: Atlas, store: PlanStore, on_ping, on_quit) -> Flask:
         uploads.pop(plan_id, None)
         return {"deleted": plan_id}
 
-    @app.get("/api/export/<plan_id>")
+    @app.post("/api/export/<plan_id>")
     def export(plan_id):
         try:
             plan = store.load(plan_id)
@@ -173,8 +193,9 @@ def create_app(atlas: Atlas, store: PlanStore, on_ping, on_quit) -> Flask:
             csv_text = to_csv(plan, pat.atlas if pat else None, pat.warp if pat else None)
         else:
             csv_text = to_csv(plan, atlas)
-        return app.response_class(csv_text, mimetype="text/csv", headers={
-            "Content-Disposition": f'attachment; filename="{_safe_filename(plan.get("name", ""))}"'})
+        path = _write_new(export_dir(), _safe_filename(plan.get("name", "")), csv_text)
+        log.info("Exported %s", path)
+        return {"path": str(path)}
 
     @app.post("/api/import")
     def import_():

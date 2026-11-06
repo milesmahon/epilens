@@ -5,6 +5,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -12,6 +13,7 @@ import pytest
 from epilens import cli
 from epilens.plans import PlanStore, new_plan
 from epilens.patient import FILE_NAMES
+import epilens.server as srv
 from epilens.server import create_server
 from legui_fake import make_legui
 from test_plans import electrode
@@ -81,22 +83,28 @@ def test_plans_crud(server):
     assert code >= 400 and not (root.parent / "x.json").exists()
 
 
-def test_export_import(server):
+def test_export_import(server, tmp_path, monkeypatch):
     url, *_ = server
+    out = tmp_path / "Downloads"
+    out.mkdir()
+    monkeypatch.setattr(srv, "export_dir", lambda: out)
     _, _, body = call(f"{url}/api/parse?q=STG%20RHH")
     p = json.loads(body)
     plan = new_plan("Pt, 2")
     plan["electrodes"] = [{"id": "e1", "name": p["name"], "custom_name": False, "n_contacts": 4, "spacing_mm": None,
                            "target": p["target"], "entry": p["entry"]}]
     assert call(f"{url}/api/plans/{plan['id']}", "PUT", plan)[0] == 200
-    code, headers, body = call(f"{url}/api/export/{plan['id']}")
-    text = body.decode()
-    assert code == 200 and text.startswith("Electrode,Contact,MNI X") and "attachment" in headers["Content-Disposition"]
-    assert ".csv" in headers["Content-Disposition"] and "/" not in headers["Content-Disposition"].split("filename=")[1]
+    code, _, body = call(f"{url}/api/export/{plan['id']}", "POST", {})
+    path = Path(json.loads(body)["path"])
+    text = path.read_text(encoding="utf-8")
+    assert code == 200 and path.parent == out and path.name.startswith("Pt_ 2_") and path.suffix == ".csv"
+    assert text.startswith("Electrode,Contact,MNI X")
+    again = Path(json.loads(call(f"{url}/api/export/{plan['id']}", "POST", {})[2])["path"])
+    assert again.name == path.stem + " (2).csv" and path.read_text(encoding="utf-8") == text   # never overwrites
     code, _, body = call(f"{url}/api/import", "POST", text, ctype="text/csv")
     back = json.loads(body)
     assert code == 200 and back["electrodes"][0]["name"] == "RSTG" and back["id"] != plan["id"]
-    assert call(f"{url}/api/export/{'0' * 32}")[0] == 404
+    assert call(f"{url}/api/export/{'0' * 32}", "POST", {})[0] == 404
     code, _, body = call(f"{url}/api/import", "POST", "nope", ctype="text/csv")
     assert code == 400 and "epilens CSV" in json.loads(body)["error"]
 
@@ -147,7 +155,6 @@ def test_quit(tmp_path):
 
 def test_idle_survives_wall_clock_jump(tmp_path, monkeypatch):
     # When a laptop sleeps the wall clock jumps forward. The server should not count that time as idle
-    import epilens.server as srv
     httpd = create_server(0, PlanStore(tmp_path), idle=5)
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
@@ -261,16 +268,17 @@ def test_attach_missing_file(server, legui):
     assert call(f"{url}/api/plans/{plan['id']}/patient/files/notes.txt", "POST", b"x")[0] == 400
 
 
-def test_restart_shows_missing(server, legui):
+def test_restart_shows_missing(server, legui, tmp_path, monkeypatch):
     url, httpd, root = server
+    monkeypatch.setattr(srv, "export_dir", lambda: tmp_path)
     plan, _ = _attach(url, legui)
     url2, httpd2 = _restart(root)
     try:
         a = json.loads(call(f"{url2}/api/anatomy?plan={plan['id']}")[2])
         assert a["space"] == "patient" and a["missing"] is True and a["meshes"] == [] and a["shape"] == [1, 1, 1]
         assert base64.b64decode(a["labels"]) == b"\0" and a["regions"] and a["volumes"] == {}
-        code, _, body = call(f"{url2}/api/export/{plan['id']}")
-        assert code == 200 and "X (AC-PC)" in body.decode().splitlines()[0]
+        code, _, body = call(f"{url2}/api/export/{plan['id']}", "POST", {})
+        assert code == 200 and "X (AC-PC)" in Path(json.loads(body)["path"]).read_text(encoding="utf-8").splitlines()[0]
     finally:
         httpd2.shutdown()
         httpd2.server_close()
