@@ -2,6 +2,7 @@
 
 The plan JSON format is shared with web/plan.js. A plan has:
   id, name, created, updated
+  space: "mni" | "patient" 
   settings: spacing_mm, contact_len_mm, diameter_mm
   electrodes: a list, where each electrode has
     id, name, custom_name (true if the user renamed it), n_contacts
@@ -15,8 +16,10 @@ import json
 import logging
 import os
 import re
+import threading
 import uuid
 import zipfile
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -24,12 +27,16 @@ import numpy as np
 import openpyxl
 
 from .atlas import Atlas
+from .warp import Warp
 
 log = logging.getLogger("epilens")
 DEFAULT_ROOT = Path.home() / "Documents" / "epilens" / "plans"
 DEFAULT_SETTINGS = {"spacing_mm": 5.0, "contact_len_mm": 2.41, "diameter_mm": 0.86}
 COLUMNS = ["Electrode", "Contact", "MNI X", "MNI Y", "MNI Z", "Region", "Hemisphere", "Entry", "Target",
            "Entry X", "Entry Y", "Entry Z", "Target X", "Target Y", "Target Z", "N contacts", "Spacing (mm)"]
+PATIENT_COLUMNS = ["Electrode", "Contact", "X (AC-PC)", "Y (AC-PC)", "Z (AC-PC)", "MNI X", "MNI Y", "MNI Z", "Region",
+                   "Hemisphere", "Entry", "Target", "Entry X (AC-PC)", "Entry Y (AC-PC)", "Entry Z (AC-PC)",
+                   "Target X (AC-PC)", "Target Y (AC-PC)", "Target Z (AC-PC)", "N contacts", "Spacing (mm)"]
 ID_RE = re.compile(r"[0-9a-f]{32}")
 
 
@@ -56,18 +63,61 @@ def contacts(e: dict, settings: dict) -> list[list[float]]:
     return [list(map(float, t + k * s * u)) for k in range(int(e["n_contacts"]))]
 
 
+def space_of(plan: dict) -> str:
+    return plan.get("space") or "mni"
+
+
+def auto_name(e: dict, electrodes: list[dict]) -> str:
+    # Same rule as autoName in web/plan.js
+    base = e["entry"].get("abbrev") or e["target"].get("abbrev") or "Electrode"
+    taken = {o["name"] for o in electrodes if o["id"] != e["id"]}
+    name, k = base, 2
+    while name in taken:
+        name, k = f"{base} {k}", k + 1
+    return name
+
+
+def convert_plan(plan: dict, fn: Callable[[np.ndarray], np.ndarray], atlas: Atlas, space: str) -> tuple[dict, list[str]]:
+    # Map every electrode through fn into the space of atlas. Returns a new plan and warnings
+    new = json.loads(json.dumps(plan))
+    new["space"] = space
+    for e in new["electrodes"]:
+        t = np.asarray(fn(np.asarray(e["target"]["xyz"], float)), float)
+        en = atlas.snap_entry(t, np.asarray(fn(np.asarray(e["entry"]["xyz"], float)), float))
+        r = atlas.surface_region(en)
+        e["target"].update(xyz=[float(v) for v in t], region=atlas.label_at(t))
+        e["entry"].update(xyz=[float(v) for v in en], abbrev=r.hemi + r.abbrev if r else "", region=r.name if r else None)
+        for end in (e["target"], e["entry"]):
+            if end.get("mode") == "coords":
+                end["text"] = _coords_text(end["xyz"], space)
+    outside = []
+    for e in new["electrodes"]:
+        if not e.get("custom_name"):
+            e["name"] = auto_name(e, new["electrodes"])
+        if not all(atlas.inside(c) for c in contacts(e, new["settings"])):
+            outside.append(e["name"])
+    return new, [f"{', '.join(outside)}: contacts outside the patient's brain"] if outside else []
+
+
 # CSV and Excel
-def to_csv(plan: dict, atlas: Atlas) -> str:
+def to_csv(plan: dict, atlas: Atlas | None, warp: Warp | None = None) -> str:
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\n")
-    w.writerow(COLUMNS)
+    patient = space_of(plan) == "patient"
+    w.writerow(PATIENT_COLUMNS if patient else COLUMNS)
     r1 = "{:.1f}".format
     for e in plan["electrodes"]:
         tx, ex = e["target"]["xyz"], e["entry"]["xyz"]
         for k, c in enumerate(contacts(e, plan["settings"]), start=1):
-            w.writerow([e["name"], k, *map(r1, c), atlas.label_at(c), "L" if c[0] < 0 else "R",
-                        e["entry"]["text"], e["target"]["text"], *map(r1, ex), *map(r1, tx),
-                        e["n_contacts"], f"{spacing_of(e, plan['settings']):g}"])
+            region = atlas.label_at(c) if atlas else ""
+            hemi = "L" if c[0] < 0 else "R"
+            tail = [e["entry"]["text"], e["target"]["text"], *map(r1, ex), *map(r1, tx),
+                    e["n_contacts"], f"{spacing_of(e, plan['settings']):g}"]
+            if patient:
+                mni = map(r1, warp.to_mni(c)) if warp else ["", "", ""]
+                w.writerow([e["name"], k, *map(r1, c), *mni, region, hemi, *tail])
+            else:
+                w.writerow([e["name"], k, *map(r1, c), region, hemi, *tail])
     return buf.getvalue()
 
 
@@ -88,26 +138,26 @@ def _num(r: dict, k: str, what: str) -> float:
         raise ValueError(f"Bad or missing {k!r} for electrode {what!r}") from None
 
 
-def _mni(xyz) -> str:
-    return f"MNI ({', '.join(f'{v:g}' for v in np.round(xyz, 1))})"
+def _coords_text(xyz, space: str = "mni") -> str:
+    return f"{'AC-PC' if space == 'patient' else 'MNI'} ({', '.join(f'{v:g}' for v in np.round(xyz, 1))})"
 
 
-def _target(xyz, atlas: Atlas | None, text: str = "") -> dict:
+def _target(xyz, atlas: Atlas | None, text: str = "", space: str = "mni") -> dict:
     # Make a target from coordinates. Its label is the coordinates followed by the region
     xyz = [float(v) for v in xyz]
     region = atlas.label_at(xyz) if atlas else None
-    text = text or _mni(xyz) + (f" · {region}" if region else "")
+    text = text or _coords_text(xyz, space) + (f" · {region}" if region else "")
     return {"xyz": xyz, "text": text, "abbrev": "", "region": region, "mode": "coords"}
 
 
-def _entry(xyz, target: dict, atlas: Atlas | None, text: str = "") -> dict:
+def _entry(xyz, target: dict, atlas: Atlas | None, text: str = "", space: str = "mni") -> dict:
     # Move the entry out along the track to the brain surface and name it after the cortex there.
     # Entries from an epilens export already have text, and they keep their position and text
     if atlas is None:
-        return {"xyz": [float(v) for v in xyz], "text": text or _mni(xyz), "abbrev": "", "region": None, "mode": "coords"}
+        return {"xyz": [float(v) for v in xyz], "text": text or _coords_text(xyz, space), "abbrev": "", "region": None, "mode": "coords"}
     xyz = [float(v) for v in (xyz if text else atlas.snap_entry(target["xyz"], xyz))]
     r = atlas.surface_region(xyz)
-    text = text or _mni(xyz) + (f" · {r.hemi} {r.base}" if r else "")
+    text = text or _coords_text(xyz, space) + (f" · {r.hemi} {r.base}" if r else "")
     return {"xyz": xyz, "text": text, "abbrev": r.hemi + r.abbrev if r else "",
             "region": r.name if r else None, "mode": "coords"}
 
@@ -165,6 +215,12 @@ def _from_rows(rows: list[list[str]], atlas: Atlas | None, name: str | None) -> 
     if not rows:
         raise ValueError("The file is empty.")
     header = [_key(c) for c in rows[0]]
+    space = "mni"
+    if any(c.endswith("_ac_pc") for c in header):   # an export of a patient plan: use its AC-PC columns
+        space = "patient"
+        atlas = None
+        header = [c[:-len("_ac_pc")] if c.endswith("_ac_pc") else c for c in header]
+        header = ["" if c.startswith("mni_") else c for c in header]
     recs = [dict(zip(header, (c.strip() for c in r))) for r in rows[1:]]
     cols = set(header)
     name_col = next((c for c in NAME_COLS if c in cols), None)
@@ -173,7 +229,7 @@ def _from_rows(rows: list[list[str]], atlas: Atlas | None, name: str | None) -> 
     xyz_cols = _coord_cols(header)
     notes: list[str] = []
     if name_col and ends <= cols:
-        electrodes = _from_ends(recs, name_col, atlas)
+        electrodes = _from_ends(recs, name_col, atlas, space)
     elif xyz_cols and (name_col or contact_col):
         combined = contact_col if not name_col else name_col if not contact_col else None
         if combined and _split_labels(recs, combined):
@@ -189,6 +245,8 @@ def _from_rows(rows: list[list[str]], atlas: Atlas | None, name: str | None) -> 
         raise ValueError("No depth electrodes found in the file." + (" " + " ".join(notes) if notes else ""))
     plan = new_plan(name or "Imported plan")
     plan["electrodes"] = electrodes
+    if space == "patient":
+        plan["space"] = space
     return plan, notes
 
 
@@ -203,7 +261,7 @@ def _electrode(nm, target, entry, n, spacing, atlas):
             "target": target, "entry": entry}
 
 
-def _from_ends(recs, name_col, atlas):
+def _from_ends(recs, name_col, atlas, space="mni"):
     seen: dict[str, dict] = {}
     for r in recs:
         nm = r.get(name_col, "")
@@ -212,10 +270,10 @@ def _from_ends(recs, name_col, atlas):
         xyz = lambda p: [_num(r, f"{p}_{a}", nm) for a in "xyz"]
         spacing = _num(r, "spacing", nm) if r.get("spacing") else None
         n = int(_num(r, "n_contacts", nm)) if r.get("n_contacts") else None
-        target = _target(xyz("target"), atlas, r.get("target", ""))
+        target = _target(xyz("target"), atlas, r.get("target", ""), space)
         if target["xyz"] == xyz("entry"):
             raise ValueError(f"Electrode {nm!r}: entry and target are the same point")
-        entry = _entry(xyz("entry"), target, atlas, r.get("entry", ""))
+        entry = _entry(xyz("entry"), target, atlas, r.get("entry", ""), space)
         seen[nm] = _electrode(nm, target, entry, n, spacing, atlas)
     return list(seen.values())
 
@@ -290,6 +348,7 @@ def _from_contacts(recs, name_col, contact_col, xyz_cols, atlas, notes):
 class PlanStore:
     def __init__(self, root: Path | str = DEFAULT_ROOT):
         self.root = Path(root)
+        self._lock = threading.Lock()
 
     def _path(self, plan_id: str) -> Path:
         if not isinstance(plan_id, str) or not ID_RE.fullmatch(plan_id):
@@ -317,8 +376,9 @@ class PlanStore:
         plan.setdefault("created", plan["updated"])
         self.root.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(plan, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, path)
+        with self._lock:   # two saves of one plan at once would share the temp file
+            tmp.write_text(json.dumps(plan, ensure_ascii=False, indent=1), encoding="utf-8")
+            os.replace(tmp, path)
         return plan
 
     def load(self, plan_id: str) -> dict:

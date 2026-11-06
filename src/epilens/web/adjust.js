@@ -3,7 +3,8 @@ import { axis, dist } from "./plan.js";
 
 const MIN_LENGTH = 1; // mm
 
-export function makeAdjust({ plans, atlas, layer, view }) {
+// frozen: a patient plan whose brain isn't loaded
+export function makeAdjust({ plans, atlas, layer, view, frozen = false }) {
   const { THREE, camera, controls, renderer } = view;
 
   const endText = (r, xyz) => (r ? `${r.hemi} ${r.base}` : atlas.labelAt(xyz));
@@ -61,6 +62,7 @@ export function makeAdjust({ plans, atlas, layer, view }) {
 
   // k is "x+", "y-" and so on to move `end` by 1 mm, or "deeper" or "shallower" to slide the whole electrode along its track
   function nudge(e, k, end) {
+    if (frozen) return;
     if (k === "deeper" || k === "shallower") {
       const u = axis(e),
         s = k === "deeper" ? -1 : 1;
@@ -81,7 +83,7 @@ export function makeAdjust({ plans, atlas, layer, view }) {
   canvas.addEventListener(
     "pointerdown",
     (ev) => {
-      const hit = layer.pick(ev);
+      const hit = !frozen && layer.pick(ev);
       if (!hit || !hit.handle) return;
       drag = { eid: hit.eid, which: hit.handle };
       const e = plans.current.electrodes.find((x) => x.id === hit.eid);
@@ -113,5 +115,5 @@ export function makeAdjust({ plans, atlas, layer, view }) {
   canvas.addEventListener("pointerup", endDrag);
   canvas.addEventListener("pointercancel", endDrag);
 
-  return { moveEnd, nudge };
+  return { moveEnd, nudge, frozen };
 }

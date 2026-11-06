@@ -1,6 +1,6 @@
 import { initScene } from "./scene.js";
 import { makeAtlas } from "./atlasjs.js";
-import { Plans, contacts } from "./plan.js";
+import { Plans, contacts, brainKey } from "./plan.js";
 import { makeElectrodeLayer } from "./draw.js";
 import { makeUI } from "./ui.js";
 import { makeAdjust } from "./adjust.js";
@@ -8,7 +8,12 @@ import { makeMenu } from "./menu.js";
 import { makeSlice } from "./slice.js";
 import { makeSections } from "./sections.js";
 
-const anatomy = await fetch("api/anatomy").then((r) => r.json());
+const plans = new Plans();
+await plans.load();
+const loadedKey = brainKey(plans.current);
+const anatomy = await fetch(`api/anatomy?plan=${plans.current.id}`).then((r) =>
+  r.json(),
+);
 const view = initScene(document.getElementById("stage"), anatomy);
 const isPatient = anatomy.space === "patient";
 const brainNote = document.getElementById("brainNote");
@@ -18,21 +23,74 @@ brainNote.textContent = isPatient
 brainNote.classList.toggle("template", !isPatient);
 const atlas = makeAtlas(anatomy);
 const layer = makeElectrodeLayer(view, atlas);
-const plans = new Plans();
-const adjust = makeAdjust({ plans, atlas, layer, view });
+showLandmarks(anatomy.landmarks || {});
+const adjust = makeAdjust({
+  plans,
+  atlas,
+  layer,
+  view,
+  frozen: !!anatomy.missing,
+});
 makeSlice({ view, plans });
 const sections = makeSections({ view, plans, atlas, anatomy });
-const ui = makeUI({ plans, atlas, layer, view, adjust });
-const menu = makeMenu({ plans });
+const ui = makeUI({ plans, atlas, layer, view, adjust, anatomy });
+const menu = makeMenu({ plans, anatomy });
 
 plans.onChange(() => {
   layer.draw(plans.current, plans.selected);
   ui.render();
   menu.render();
 });
-await plans.load();
+plans._emit(); // plans loaded before these listeners existed
+
+// The patient's AC and PC
+function showLandmarks(landmarks) {
+  const { THREE } = view;
+  const marks = Object.entries(landmarks).map(([name, xyz]) => {
+    const ball = new THREE.Mesh(
+      new THREE.SphereGeometry(1.5, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0xf5d90a, depthTest: false }),
+    );
+    ball.position.set(...xyz);
+    ball.renderOrder = 7;
+    view.scene.add(ball);
+    const el = document.createElement("div");
+    el.className = "elLabel landmark";
+    el.textContent = name;
+    document.getElementById("stage").append(el); // not in #labels, which the electrode layer redraws
+    return { el, at: xyz.map((v, i) => v + (i === 2 ? 4 : 0)) };
+  });
+  if (marks.length)
+    view.onFrame(() => {
+      for (const m of marks) {
+        const p = view.toScreen(m.at);
+        m.el.style.display = p ? "block" : "none";
+        if (p)
+          m.el.style.transform = `translate(${p[0]}px, ${p[1]}px) translate(-50%, -50%)`;
+      }
+    });
+}
+
+// new page on new plan
+async function reloadOnto(next) {
+  const gone = !plans.list.includes(plans.current); // the plan being closed has nothing to save
+  const ok =
+    (gone || (await plans.saveNow(plans.current))) &&
+    (await plans.saveNow(next));
+  if (!ok) return; // couldn't save, so stay here (the banner says why)
+  try {
+    localStorage.setItem("epilens.currentPlan", next.id);
+  } catch (e) {
+    /* storage blocked */
+  }
+  location.reload();
+}
+plans.beforeSwitch = (next) =>
+  brainKey(next) === loadedKey ? false : reloadOnto(next);
 
 // Ping the server so it stays running. Show a banner if it can't be reached or a save fails, and retry unsaved plans
+const missing = document.getElementById("missing");
+missing.hidden = !anatomy.missing;
 const banner = document.getElementById("offline");
 let online = true;
 function showStatus() {
@@ -83,5 +141,6 @@ window.epilens = {
   layer,
   sections,
   moveEnd: adjust.moveEnd,
+  attachPatient: menu.attachPatient,
   ready: true,
 };

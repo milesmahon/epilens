@@ -1,7 +1,39 @@
 // The settings menu (hardware, import and quit), dropping files on the page, and Export CSV
 import { $, h } from "./dom.js";
 
-export function makeMenu({ plans }) {
+const DROP_TEXT =
+  "Drop CSV or Excel files to add electrodes, or drop a reconstruction folder";
+
+// LeGUI files to send to the server, which checks that none are missing
+const PATIENT_FILE =
+  /^(mr|y_mr|surfaces|mrgray|mrwhite|acpcmm|ct)\.(nii|nii\.gz|mat)$/i;
+const fileKey = (name) =>
+  name.toLowerCase().replace(/\.(nii\.gz|nii|mat)$/, "");
+
+// Every file in the dropped files and folders, looking inside folders
+async function filesIn(entries) {
+  const out = [];
+  for (const en of entries) {
+    if (en.isFile) {
+      const f = await new Promise((ok, bad) => en.file(ok, bad));
+      f.path = en.fullPath; // where it was in the dropped folder, to name duplicates
+      out.push(f);
+    } else if (en.isDirectory) {
+      const reader = en.createReader();
+      for (;;) {
+        // readEntries returns a batch at a time, and an empty batch at the end
+        const batch = await new Promise((ok, bad) =>
+          reader.readEntries(ok, bad),
+        );
+        if (!batch.length) break;
+        out.push(...(await filesIn(batch)));
+      }
+    }
+  }
+  return out;
+}
+
+export function makeMenu({ plans, anatomy }) {
   const menu = $("menu");
   let applyTo = "all";
   const settingRow = (label, key, step) => {
@@ -59,11 +91,7 @@ export function makeMenu({ plans }) {
     if (notes?.length) alert(`Imported ${file.name}.\n\n${notes.join("\n\n")}`);
   }
 
-  const dropHint = h(
-    "div",
-    { class: "drop", hidden: "" },
-    "Drop CSV or Excel files to open each as a new plan",
-  );
+  const dropHint = h("div", { class: "drop", hidden: "" }, DROP_TEXT);
   document.body.append(dropHint);
   const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
   let depth = 0; // dragenter and dragleave fire for each child element, so count them
@@ -90,7 +118,15 @@ export function makeMenu({ plans }) {
     e.preventDefault(); // otherwise the browser opens the file
     depth = 0;
     dropHint.hidden = true;
+    // Read everything from the drop before the first await: the browser empties dataTransfer afterwards
     const files = [...e.dataTransfer.files];
+    const entries = [...e.dataTransfer.items]
+      .map((i) => i.webkitGetAsEntry && i.webkitGetAsEntry())
+      .filter(Boolean);
+    if (entries.some((en) => en.isDirectory || PATIENT_FILE.test(en.name))) {
+      const all = await filesIn(entries);
+      if (all.some((f) => PATIENT_FILE.test(f.name))) return attachPatient(all);
+    }
     const csvs = files.filter(
       (f) => /\.(csv|txt|xlsx|xls)$/i.test(f.name) || f.type === "text/csv",
     );
@@ -104,6 +140,90 @@ export function makeMenu({ plans }) {
     }
     for (const f of csvs) await importFile(f);
   });
+
+  // A patient's LeGUI files: hand them to epilens on this computer, which moves this plan onto the patient's brain
+  async function attachPatient(dropped) {
+    const plan = plans.current;
+    const files = dropped.filter((f) => PATIENT_FILE.test(f.name));
+    const byKey = {};
+    for (const f of files) (byKey[fileKey(f.name)] ||= []).push(f);
+    const twice = Object.values(byKey).filter((fs) => fs.length > 1);
+    if (twice.length)
+      return alert(
+        `These files are in the drop more than once, so it isn't clear which patient they belong to:\n${twice
+          .flat()
+          .map((f) => f.path || f.name)
+          .join("\n")}\n\nDrop just the patient's Registered folder.`,
+      );
+    let name = null;
+    if (/^Plan \d+$/.test(plan.name)) {
+      while (!name) {
+        const typed = prompt(
+          "Name this plan (for example the patient's name or ID):",
+        );
+        if (typed === null) return; // cancelled, so nothing happens
+        name = typed.trim();
+      }
+    }
+    const ask =
+      plan.space !== "patient"
+        ? "Move this plan onto the patient's brain? Electrodes will be converted to the patient's AC-PC coordinates."
+        : anatomy.missing
+          ? null // after a restart: just load the brain back
+          : "This plan is already on a patient's brain. Load this folder as its brain instead? Coordinates won't change, so it must be the same patient.";
+    if (ask && !confirm(ask)) return;
+    if (name) plans.rename(plan.id, name);
+    if (!(await plans.saveNow(plan)))
+      return alert(
+        "Couldn't save this plan first, so the patient wasn't loaded.",
+      );
+    // Hold all edits until the server has converted the plan: anything saved meanwhile would be overwritten, or undo it
+    plans.paused = true;
+    for (const t of Object.values(plans._timers)) clearTimeout(t);
+    const status = (msg) => {
+      dropHint.textContent = msg;
+      dropHint.classList.add("busy"); // covers the page so nothing can be changed
+      document.activeElement?.blur(); // and nothing can be typed
+      dropHint.hidden = false;
+    };
+    try {
+      // One file per request, sent whole every attempt. The first one tells the server to forget earlier attempts
+      for (const [k, f] of files.entries()) {
+        status(`Reading ${f.name} (${k + 1}/${files.length})…`);
+        const r = await fetch(
+          `api/plans/${plan.id}/patient/files/${encodeURIComponent(f.name)}${k ? "" : "?first=1"}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/octet-stream" },
+            body: f,
+          },
+        );
+        if (!r.ok)
+          throw new Error(
+            (await r.json().catch(() => ({}))).error || `HTTP ${r.status}`,
+          );
+      }
+      status("Building the patient's brain…");
+      const r = await fetch(`api/plans/${plan.id}/patient`, { method: "POST" });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+      plans.replace(body.plan);
+      if (body.warnings?.length) alert(body.warnings.join("\n"));
+    } catch (err) {
+      plans.paused = false;
+      return alert(`Couldn't load the patient:\n${err.message || err}`);
+    } finally {
+      dropHint.hidden = true;
+      dropHint.classList.remove("busy");
+      dropHint.textContent = DROP_TEXT;
+    }
+    try {
+      localStorage.setItem("epilens.currentPlan", plan.id);
+    } catch (e) {
+      /* storage blocked */
+    }
+    location.reload(); // the page is built for one brain, so reload onto the patient's
+  }
 
   async function quit() {
     if (!confirm("Stop epilens? Plans are saved.")) return;
@@ -152,6 +272,11 @@ export function makeMenu({ plans }) {
       ),
       h(
         "div",
+        { class: "note" },
+        "Not a medical device. Check every plan against the patient's own imaging.",
+      ),
+      h(
+        "div",
         { class: "buttons" },
         h("button", { name: "quit", onclick: quit }, "Quit epilens"),
       ),
@@ -187,5 +312,5 @@ export function makeMenu({ plans }) {
     h("a", { href: `api/export/${plans.current.id}`, download: "" }).click();
   });
 
-  return { render };
+  return { render, attachPatient };
 }

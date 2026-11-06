@@ -41,7 +41,8 @@ const css = (name) =>
 const NORMAL = "#d5dbe6",
   OUTSIDE = "#f87171",
   ENTRY = "#e5383b",
-  CURSOR = "#e0b45a";
+  CURSOR = "#e0b45a",
+  LANDMARK = "#f5d90a";
 const FONT = `"Source Sans 3", "Segoe UI", "Helvetica Neue", Arial, sans-serif`;
 const LETTER = [
   ["R", "L"],
@@ -58,11 +59,18 @@ const letter = (v) => {
 };
 
 export function makeSections({ view, plans, atlas, anatomy }) {
-  // Template T1 is loaded the first time a section is drawn
+  // show either patient t1 or template t1
+  const isPatient = anatomy.space === "patient",
+    volumes = anatomy.volumes || {};
   let scan = null,
     loading = false;
+  const patientScan = (key) => ({
+    shape: atlas.shape,
+    toVoxel: atlas.toVoxel,
+    data: bytes(volumes[key]),
+  });
   function loadScan() {
-    if (loading) return;
+    if (loading || isPatient) return; // a patient with no imaging shows nothing
     loading = true;
     fetch("api/t1")
       .then((r) => r.json())
@@ -76,6 +84,8 @@ export function makeSections({ view, plans, atlas, anatomy }) {
       })
       .catch(() => (loading = false)); // try again on the next draw
   }
+  const firstVol = ["MR", ...Object.keys(volumes)].find((k) => k in volumes);
+  if (firstVol) scan = patientScan(firstVol);
   const box = document.getElementById("sections"),
     toggle = document.getElementById("split");
   const at = h("input", {
@@ -88,15 +98,30 @@ export function makeSections({ view, plans, atlas, anatomy }) {
     value: 0,
   });
   const info = h("span", { id: "secInfo" });
-  const isPatient = anatomy.space === "patient";
-  box.append(
-    h(
-      "div",
-      { class: "sourceNote" + (isPatient ? "" : " template") },
-      isPatient ? "Patient T1" : "Template T1 (ICBM152)",
-    ),
-    h("div", { class: "secBar" }, "Along the lead", at, info),
+  const note = h(
+    "div",
+    { class: "sourceNote" + (isPatient ? "" : " template") },
+    isPatient
+      ? `Patient ${firstVol || "scan missing"}`
+      : "Template T1 (ICBM152)",
   );
+  const bar = h("div", { class: "secBar" }, "Cursor", at, info);
+  if (Object.keys(volumes).length > 1) {
+    // pick which patient scan to show
+    const pickVol = h(
+      "select",
+      { class: "secVol", title: "Scan shown in the sections" },
+      ...Object.keys(volumes).map((k) => h("option", { value: k }, k)),
+    );
+    pickVol.value = firstVol;
+    pickVol.addEventListener("change", () => {
+      scan = patientScan(pickVol.value);
+      note.textContent = `Patient ${pickVol.value}`;
+      lastKey = ""; // redraw
+    });
+    bar.append(pickVol);
+  }
+  box.append(note, bar);
   const panels = ["coronal", "axial"].map((mode, i) => {
     const pick = h(
       "select",
@@ -322,6 +347,20 @@ export function makeSections({ view, plans, atlas, anatomy }) {
         ctx.fillText(e.name, lx + 6, ly - 6);
         if (isSel) ctx.font = `14px ${FONT}`;
       }
+    }
+    // AC and PC, where they are near the plane
+    ctx.strokeStyle = ctx.fillStyle = LANDMARK;
+    ctx.lineWidth = 1.5;
+    for (const [name, xyz] of Object.entries(anatomy.landmarks || {})) {
+      const q = screen(xyz);
+      if (Math.abs(q[2]) > SLAB) continue;
+      ctx.beginPath();
+      ctx.moveTo(q[0] - 5, q[1] - 5);
+      ctx.lineTo(q[0] + 5, q[1] + 5);
+      ctx.moveTo(q[0] + 5, q[1] - 5);
+      ctx.lineTo(q[0] - 5, q[1] + 5);
+      ctx.stroke();
+      ctx.fillText(name, q[0] + 7, q[1] - 7);
     }
     // cursor
     const c = screen(sel.P.toArray());

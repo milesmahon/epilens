@@ -437,6 +437,9 @@ input[type="range"] {
     0 0 7px #fff;
   white-space: nowrap;
 }
+.elLabel.landmark {
+  color: #8a6d00;
+}
 .elLabel.sel {
   color: var(--accent-deep);
   font-size: var(--t-body);
@@ -467,7 +470,8 @@ input[type="range"] {
   font-size: var(--t-meta);
   pointer-events: none;
 }
-#offline {
+#offline,
+#missing {
   position: absolute;
   top: 14px;
   left: 50%;
@@ -481,6 +485,10 @@ input[type="range"] {
   border-radius: 8px;
   padding: 9px 13px;
   box-shadow: var(--shadow-pop);
+}
+
+#missing {
+  top: 64px;
 }
 
 /* note saying whether the brain is the template or the patient's */
@@ -1011,6 +1019,11 @@ input[type="range"] {
 }
 .drop[hidden] {
   display: none;
+}
+.drop.busy {
+  inset: 0;
+  border-radius: 0;
+  pointer-events: auto; /* block clicks while a patient loads */
 }
 
 @media (max-width: 1180px) {

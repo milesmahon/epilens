@@ -1,10 +1,15 @@
+import csv
+import io
+import json
 import logging
 
 import numpy as np
 import pytest
 
 from epilens.matcher import parse
-from epilens.plans import PlanStore, contacts, from_csv, new_plan, to_csv
+from epilens.patient import load_patient
+from epilens.plans import PlanStore, auto_name, contacts, convert_plan, from_csv, new_plan, space_of, to_csv
+from legui_fake import make_legui
 
 
 def electrode(atlas, text, n=None):
@@ -151,3 +156,97 @@ def test_import_xlsx_without_electrodes(atlas):
                                     [[f"Grid{k}", -60, 10 * (k % 3), 10 * (k // 3)] for k in range(1, 7)]}), atlas)
     with pytest.raises(ValueError, match="epilens CSV"):
         import_file(make_xlsx({"S": [["hello", "world"], [1, 2]]}), atlas)
+
+
+# Patient space
+@pytest.fixture(scope="module")
+def patient(atlas):
+    a = np.radians(5)
+    T = np.eye(4)
+    T[:3, :3] = 0.95 * np.array([[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1]])
+    T[:3, 3] = [2, 12, -4]
+    return load_patient(make_legui(T), atlas)
+
+
+def test_convert_to_patient(atlas, patient):
+    p = new_plan("Pt")
+    p["electrodes"] = [electrode(atlas, "LSTG LHH", 6)]
+    before = json.dumps(p)
+    new, _ = convert_plan(p, patient.warp.to_patient, patient.atlas, "patient")
+    assert json.dumps(p) == before and space_of(p) == "mni" and space_of(new) == "patient"
+    e, o = new["electrodes"][0], p["electrodes"][0]
+    assert np.allclose(e["target"]["xyz"], patient.warp.to_patient(o["target"]["xyz"]), atol=0.01)
+    en, t = np.array(e["entry"]["xyz"]), np.array(e["target"]["xyz"])
+    u = (en - t) / np.linalg.norm(en - t)
+    assert patient.atlas.inside(en) and not patient.atlas.inside(en + u)
+    assert e["n_contacts"] == 6
+
+
+def test_convert_renames_default_only(atlas, patient):
+    p = new_plan("Pt")
+    a, b = electrode(atlas, "LSTG LHH"), electrode(atlas, "RSTG RHH")
+    b["name"], b["custom_name"] = "Mine", True
+    p["electrodes"] = [a, b]
+    new, _ = convert_plan(p, patient.warp.to_patient, patient.atlas, "patient")
+    x, y = new["electrodes"]
+    assert y["name"] == "Mine"
+    assert x["name"] == auto_name(x, [x]) == (x["entry"]["abbrev"] or x["target"]["abbrev"] or "Electrode")
+
+
+def test_auto_name_duplicates():
+    mk = lambda i, n="": {"id": i, "name": n, "entry": {"abbrev": "LHH"}, "target": {"abbrev": "X"}}
+    a, b = mk("a", "LHH"), mk("b")
+    assert auto_name(b, [a, b]) == "LHH 2"
+    assert auto_name({"id": "c", "entry": {"abbrev": ""}, "target": {"abbrev": ""}}, []) == "Electrode"
+
+
+def test_convert_warns_outside(atlas, patient):
+    p = new_plan("Pt")
+    p["electrodes"] = [electrode(atlas, "LSTG LHH", 32)]
+    new, warnings = convert_plan(p, patient.warp.to_patient, patient.atlas, "patient")
+    assert any(new["electrodes"][0]["name"] in w and "outside" in w for w in warnings)
+
+
+def test_coords_text_space(atlas, patient):
+    p = new_plan("Pt")
+    e = electrode(atlas, "LSTG LHH")
+    e["target"]["mode"] = e["entry"]["mode"] = "coords"
+    e["target"]["text"] = "MNI (1, 2, 3)"
+    p["electrodes"] = [e]
+    new, _ = convert_plan(p, patient.warp.to_patient, patient.atlas, "patient")
+    assert new["electrodes"][0]["target"]["text"].startswith("AC-PC (")
+    assert new["electrodes"][0]["entry"]["text"].startswith("AC-PC (")
+
+
+@pytest.fixture
+def patient_plan(atlas, patient):
+    p = new_plan("Pt")
+    p["electrodes"] = [electrode(atlas, "LSTG LHH", 5), electrode(atlas, "RSTG RHH", 4)]
+    return convert_plan(p, patient.warp.to_patient, patient.atlas, "patient")[0]
+
+
+def test_patient_csv_columns(patient, patient_plan):
+    rows = list(csv.reader(io.StringIO(to_csv(patient_plan, patient.atlas, patient.warp))))
+    h = rows[0]
+    assert h[2:8] == ["X (AC-PC)", "Y (AC-PC)", "Z (AC-PC)", "MNI X", "MNI Y", "MNI Z"]
+    assert "Entry X (AC-PC)" in h and "Target Z (AC-PC)" in h
+    r = rows[1]
+    c = np.array(contacts(patient_plan["electrodes"][0], patient_plan["settings"])[0])
+    assert np.allclose([float(v) for v in r[5:8]], patient.warp.to_mni(c), atol=0.1)
+    assert r[h.index("Hemisphere")] == ("L" if c[0] < 0 else "R")
+
+
+def test_patient_csv_without_imaging(patient_plan):
+    rows = list(csv.reader(io.StringIO(to_csv(patient_plan, None, None))))
+    h = rows[0]
+    for r in rows[1:]:
+        assert r[h.index("Region")] == "" and r[5:8] == ["", "", ""] and r[2] != ""
+
+
+def test_import_patient_export(patient, patient_plan):
+    back = from_csv(to_csv(patient_plan, patient.atlas, patient.warp))
+    assert space_of(back) == "patient"
+    for a, b in zip(patient_plan["electrodes"], back["electrodes"]):
+        assert np.allclose(a["entry"]["xyz"], b["entry"]["xyz"], atol=0.1)
+        assert np.allclose(a["target"]["xyz"], b["target"]["xyz"], atol=0.1)
+        assert a["n_contacts"] == b["n_contacts"]

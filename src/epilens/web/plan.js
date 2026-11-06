@@ -29,6 +29,8 @@ export function contacts(e, settings) {
   );
 }
 
+export const brainKey = (plan) => (plan.space === "patient" ? plan.id : "mni");
+
 export function newPlan(name) {
   return {
     id: hex(32),
@@ -80,6 +82,7 @@ export class Plans {
     this.saveError = null;
     this.onSaveStatus = () => {};
     this.paused = false; // another browser tab took over
+    this.beforeSwitch = null; // (next) => a promise to cancel the switch because the page is reloading onto another brain, else false
   }
 
   onChange(cb) {
@@ -91,7 +94,11 @@ export class Plans {
 
   async load() {
     this.list = await fetch("api/plans").then((r) => r.json());
-    if (!this.list.length) return this.add("Plan 1");
+    if (!this.list.length) {
+      const plan = this.add("Plan 1");
+      await this.saveNow(plan);
+      return plan;
+    }
     let last = null;
     try {
       last = localStorage.getItem("epilens.currentPlan");
@@ -149,8 +156,21 @@ export class Plans {
     this._emit();
   }
 
+  // Swap in the server's copy of a plan with same id
+  replace(plan) {
+    const i = this.list.findIndex((p) => p.id === plan.id);
+    if (i < 0) return;
+    this.list[i] = plan;
+    if (this.current && this.current.id === plan.id) this.current = plan;
+    this.unsaved.delete(plan.id);
+    this._emit();
+  }
+
   switchTo(id) {
-    this.current = this.list.find((p) => p.id === id) || this.current;
+    const next = this.list.find((p) => p.id === id) || this.current;
+    if (this.beforeSwitch && next !== this.current && this.beforeSwitch(next))
+      return; // the page is reloading onto next
+    this.current = next;
     this.selected = null;
     try {
       localStorage.setItem("epilens.currentPlan", this.current.id);

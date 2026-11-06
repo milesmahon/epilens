@@ -11,7 +11,10 @@ import pytest
 
 from epilens import cli
 from epilens.plans import PlanStore, new_plan
+from epilens.patient import FILE_NAMES
 from epilens.server import create_server
+from legui_fake import make_legui
+from test_plans import electrode
 
 
 @pytest.fixture
@@ -181,3 +184,122 @@ def test_other_websites_are_refused(server):
     status, _ = raw(port, "PUT", f"/api/plans/{plan['id']}", {"Host": f"localhost:{port}",
                     "Origin": f"http://localhost:{port}", "Content-Type": "application/json"}, json.dumps(plan).encode())
     assert status == 200
+
+
+# Patient brain
+def _T():
+    a = np.radians(5)
+    T = np.eye(4)
+    T[:3, :3] = 0.95 * np.array([[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1]])
+    T[:3, 3] = [2, 12, -4]
+    return T
+
+
+@pytest.fixture(scope="module")
+def legui():
+    return make_legui(_T())
+
+
+def _mni_plan(url):
+    from epilens.atlas import Atlas
+    plan = new_plan("Pt")
+    plan["electrodes"] = [electrode(Atlas.load(), "STG RHH", 6)]
+    assert call(f"{url}/api/plans/{plan['id']}", "PUT", plan)[0] == 200
+    return plan
+
+
+def _upload(url, plan_id, files, skip=()):
+    for k, data in files.items():
+        if k not in skip:
+            code, _, body = call(f"{url}/api/plans/{plan_id}/patient/files/{FILE_NAMES[k]}", "POST", data,
+                                 ctype="application/octet-stream")
+            assert code == 200 and json.loads(body) == {"received": k}
+
+
+def _attach(url, legui):
+    plan = _mni_plan(url)
+    _upload(url, plan["id"], legui)
+    code, _, body = call(f"{url}/api/plans/{plan['id']}/patient", "POST", b"")
+    assert code == 200, body
+    return plan, json.loads(body)
+
+
+def _restart(root):
+    httpd = create_server(0, PlanStore(root), idle=None)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{httpd.server_address[1]}", httpd
+
+
+def test_attach_patient(server, legui):
+    url, _, root = server
+    plan, out = _attach(url, legui)
+    assert out["plan"]["space"] == "patient" and isinstance(out["warnings"], list)
+    assert json.loads((root / f"{plan['id']}.json").read_text())["space"] == "patient"
+    a = json.loads(call(f"{url}/api/anatomy?plan={plan['id']}")[2])
+    assert a["space"] == "patient" and "MR" in a["volumes"] and not a.get("missing")
+    assert json.loads(call(f"{url}/api/anatomy")[2])["space"] == "mni"
+    # a second attach on a patient plan only loads imaging
+    _upload(url, plan["id"], legui)
+    code, _, body = call(f"{url}/api/plans/{plan['id']}/patient", "POST", b"")
+    assert code == 200 and json.loads(body)["plan"]["electrodes"] == out["plan"]["electrodes"]
+
+
+def test_attach_missing_file(server, legui):
+    url, _, root = server
+    plan = _mni_plan(url)
+    before = (root / f"{plan['id']}.json").read_text()
+    _upload(url, plan["id"], legui, skip=("y_mr",))
+    code, _, body = call(f"{url}/api/plans/{plan['id']}/patient", "POST", b"")
+    assert code == 400 and "y_MR" in json.loads(body)["error"]
+    assert (root / f"{plan['id']}.json").read_text() == before
+    assert json.loads(call(f"{url}/api/anatomy?plan={plan['id']}")[2])["space"] == "mni"
+    # uploads are dropped after the failed attach: a retry with only y_MR still lacks the rest
+    _upload(url, plan["id"], legui, skip=tuple(k for k in legui if k != "y_mr"))
+    code, _, body = call(f"{url}/api/plans/{plan['id']}/patient", "POST", b"")
+    assert code == 400 and "MR.nii" in json.loads(body)["error"] and "y_MR" not in json.loads(body)["error"]
+    assert call(f"{url}/api/plans/{'0' * 32}/patient", "POST", b"")[0] == 404
+    assert call(f"{url}/api/plans/{plan['id']}/patient/files/notes.txt", "POST", b"x")[0] == 400
+
+
+def test_restart_shows_missing(server, legui):
+    url, httpd, root = server
+    plan, _ = _attach(url, legui)
+    url2, httpd2 = _restart(root)
+    try:
+        a = json.loads(call(f"{url2}/api/anatomy?plan={plan['id']}")[2])
+        assert a["space"] == "patient" and a["missing"] is True and a["meshes"] == [] and a["shape"] == [1, 1, 1]
+        assert base64.b64decode(a["labels"]) == b"\0" and a["regions"] and a["volumes"] == {}
+        code, _, body = call(f"{url2}/api/export/{plan['id']}")
+        assert code == 200 and "X (AC-PC)" in body.decode().splitlines()[0]
+    finally:
+        httpd2.shutdown()
+        httpd2.server_close()
+
+
+def test_parse_uses_plan_atlas(server, legui):
+    url, *_ = server
+    plan, _ = _attach(url, legui)
+    p = json.loads(call(f"{url}/api/parse?q=LHH&plan={plan['id']}")[2])
+    t = json.loads(call(f"{url}/api/parse?q=LHH")[2])
+    assert p["ok"] and not np.allclose(p["target"]["xyz"], t["target"]["xyz"], atol=1)
+    from epilens.patient import load_patient
+    from epilens.atlas import Atlas
+    from epilens.matcher import parse
+    pat = load_patient(legui, Atlas.load())
+    assert np.allclose(p["target"]["xyz"], parse("LHH", pat.atlas).target.xyz)
+
+
+def test_patient_upload_foreign_origin(server):
+    url, *_ = server
+    req = urllib.request.Request(f"{url}/api/plans/{'0' * 32}/patient/files/MR.nii", data=b"x", method="POST",
+                                 headers={"Origin": "http://evil.example"})
+    with pytest.raises(urllib.error.HTTPError) as e:
+        urllib.request.urlopen(req)
+    assert e.value.code == 403
+
+
+def test_no_files_written(server, legui):
+    url, _, root = server
+    _attach(url, legui)
+    assert {p.suffix for p in root.rglob("*") if p.is_file()} == {".json"}
+    assert not [p for p in root.rglob("*") if p.is_dir()]

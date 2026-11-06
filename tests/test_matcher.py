@@ -186,3 +186,9 @@ def test_displayed_text_reparses_as_entry(atlas):
             if not (p.ok and p.entry.region == r.name and p.entry.xyz == list(atlas.snap_entry(t, atlas.entry_point(r, mod)))):
                 bad.append((r.name, mod, p.read_as))
     assert bad == []
+
+
+def test_typed_coords_on_patient_plan_say_ac_pc(atlas):
+    p = parse("target -25 -20 -15 entry lateral", atlas, space="patient")
+    assert p.ok and p.target.text.startswith("AC-PC (")
+    assert parse("target -25 -20 -15 entry lateral", atlas).target.text.startswith("MNI (")

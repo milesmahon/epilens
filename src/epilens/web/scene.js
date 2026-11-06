@@ -1,8 +1,14 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-// The glass brain scene. The shaders, lighting and views started as copies from lens/viewer.js
-export const bytes = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+// The glass brain scene
+// Base64 to bytes
+export const bytes = (s) => {
+  const bin = atob(s),
+    out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+};
 const typed = (s, T) => new T(bytes(s).buffer);
 
 // The slice plane, stored as (normal, constant). It cuts away the side its normal points to
@@ -140,6 +146,7 @@ export function initScene(stage, anatomy) {
   const camera = new THREE.PerspectiveCamera(32, 1, 1, 3000);
   camera.up.set(0, 0, 1);
   const controls = new OrbitControls(camera, renderer.domElement);
+  TARGET.set(...anatomy.center); // the middle of this brain
   controls.target.copy(TARGET);
   controls.enableDamping = true;
   scene.add(new THREE.HemisphereLight(0xffffff, 0xb9c6cc, 0.8));

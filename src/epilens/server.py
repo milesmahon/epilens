@@ -11,6 +11,7 @@ import threading
 import time
 from datetime import date
 from importlib import resources
+from types import SimpleNamespace
 
 import numpy as np
 from flask import Flask, abort, jsonify, request
@@ -20,36 +21,17 @@ from werkzeug.serving import ThreadedWSGIServer
 from . import __version__
 from .atlas import Atlas
 from .matcher import parse
-from .plans import PlanStore, import_file, to_csv
+from .patient import MNI_CENTER, Patient, PatientError, anatomy_json, file_key, load_patient, template_meshes
+from .plans import PlanStore, convert_plan, import_file, space_of, to_csv
 
 log = logging.getLogger("epilens")
 mimetypes.add_type("text/javascript", ".js")  # Windows can report .js as text/plain, which breaks ES modules
 mimetypes.add_type("font/woff2", ".woff2")
 
 
-def _b64(a: np.ndarray) -> str:
-    return base64.b64encode(np.ascontiguousarray(a).tobytes()).decode()
-
-
 @functools.cache
 def anatomy_payload() -> bytes:
-    atlas = Atlas.load()
-    meshes = []
-    with resources.as_file(resources.files("epilens") / "data" / "meshes.npz") as p:
-        z = np.load(p)
-        for n in z["names"].tolist():
-            v, f = z[f"{n}/v"], z[f"{n}/f"]
-            faces = f.astype(np.uint16) if len(v) < 65536 else f.astype(np.uint32)
-            m = {"name": n, "color": str(z[f"{n}/c"]), "kind": "hull" if n == "Brain" else "deep",
-                 "v": _b64(v.astype(np.float32)), "f": _b64(faces), "f32": faces.dtype == np.uint32}
-            if f"{n}/s" in z:  # sulcal depth, used to shade the cortex
-                m["s"] = _b64(z[f"{n}/s"].astype(np.uint8))
-            meshes.append(m)
-    body = {"meshes": meshes, "labels": _b64(atlas.labels.astype(np.uint8)), "shape": list(atlas.labels.shape),
-            "affine": atlas.affine.tolist(), "regions": [{"id": r.id, "name": r.name, "hemi": r.hemi, "base": r.base, "abbrev": r.abbrev, "kind": r.kind}
-                        for r in atlas.regions],
-            "version": __version__}
-    return json.dumps(body, separators=(",", ":")).encode()
+    return anatomy_json(template_meshes(), Atlas.load(), space="mni", center=list(MNI_CENTER), volumes={}, landmarks={})
 
 
 @functools.cache
@@ -58,7 +40,7 @@ def t1_payload() -> bytes:
     with resources.as_file(resources.files("epilens") / "data" / "t1.npz") as p:
         z = np.load(p)
         t1, affine = z["t1"], z["affine"]
-    body = {"shape": list(t1.shape), "affine": affine.tolist(), "data": _b64(np.ascontiguousarray(t1))}
+    body = {"shape": list(t1.shape), "affine": affine.tolist(), "data": base64.b64encode(np.ascontiguousarray(t1).tobytes()).decode()}
     return json.dumps(body, separators=(",", ":")).encode()
 
 
@@ -67,8 +49,16 @@ def _safe_filename(name: str) -> str:
     return f"{s[:60]}_{date.today().isoformat()}.csv"
 
 
+def _missing_payload(atlas: Atlas) -> bytes:
+    # A patient plan whose imaging has not been loaded since the server started, show an empty one-voxel volume
+    stub = SimpleNamespace(labels=np.zeros((1, 1, 1), np.uint8), affine=np.eye(4), regions=atlas.regions)
+    return anatomy_json((), stub, space="patient", missing=True, center=[0, 0, 0], volumes={}, landmarks={})
+
+
 def create_app(atlas: Atlas, store: PlanStore, on_ping, on_quit) -> Flask:
     app = Flask(__name__, static_folder="web", static_url_path="")
+    patients: dict[str, Patient] = {}           # plan id -> patient brain, in memory only
+    uploads: dict[str, dict[str, bytes]] = {}   # plan id -> files the page handed over (same computer), until attached
 
     @app.before_request
     def only_our_page():
@@ -102,9 +92,19 @@ def create_app(atlas: Atlas, store: PlanStore, on_ping, on_quit) -> Flask:
         on_ping()
         return {"app": "epilens", "version": __version__}
 
+    def stored(plan_id: str) -> dict:
+        try:
+            return store.load(plan_id)
+        except FileNotFoundError:
+            abort(404)
+
     @app.get("/api/anatomy")
     def anatomy():
-        return app.response_class(anatomy_payload(), mimetype="application/json")
+        plan_id = request.args.get("plan")
+        if not plan_id or space_of(stored(plan_id)) != "patient":
+            return app.response_class(anatomy_payload(), mimetype="application/json")
+        p = patients.get(plan_id)
+        return app.response_class(p.payload if p else _missing_payload(atlas), mimetype="application/json")
 
     @app.get("/api/t1")
     def t1():
@@ -112,7 +112,37 @@ def create_app(atlas: Atlas, store: PlanStore, on_ping, on_quit) -> Flask:
 
     @app.get("/api/parse")
     def parse_text():
-        return dataclasses.asdict(parse(request.args.get("q", ""), atlas, float(request.args.get("spacing") or 5.0)))
+        plan_id = request.args.get("plan")
+        use, space = atlas, "mni"
+        if plan_id and space_of(stored(plan_id)) == "patient":
+            if plan_id not in patients:
+                raise ValueError("The patient's imaging isn't loaded.")
+            use, space = patients[plan_id].atlas, "patient"
+        return dataclasses.asdict(parse(request.args.get("q", ""), use, float(request.args.get("spacing") or 5.0), space))
+
+    @app.post("/api/plans/<plan_id>/patient/files/<name>")
+    def patient_file(plan_id, name):
+        stored(plan_id)
+        key = file_key(name)
+        if key is None:
+            raise ValueError("not a patient file")
+        if request.args.get("first"):   # a new attempt: forget files from one that was abandoned
+            uploads.pop(plan_id, None)
+        uploads.setdefault(plan_id, {})[key] = request.get_data(cache=False)   # kept in memory, never written
+        return {"received": key}
+
+    @app.post("/api/plans/<plan_id>/patient")
+    def attach_patient(plan_id):
+        plan = stored(plan_id)
+        files = uploads.pop(plan_id, {})   # released whether or not loading works; the page re-sends every file
+        patient = load_patient(files, atlas)   # PatientError -> 400, nothing changed
+        warnings = list(patient.warnings)
+        if space_of(plan) != "patient":
+            plan, more = convert_plan(plan, patient.warp.to_patient, patient.atlas, "patient")
+            plan = store.save(plan)
+            warnings += more
+        patients[plan_id] = patient
+        return {"plan": plan, "warnings": warnings}
 
     @app.get("/api/plans")
     def list_plans():
@@ -128,6 +158,8 @@ def create_app(atlas: Atlas, store: PlanStore, on_ping, on_quit) -> Flask:
     @app.delete("/api/plans/<plan_id>")
     def delete_plan(plan_id):
         store.delete(plan_id)
+        patients.pop(plan_id, None)   # delete the imaging along with the plan
+        uploads.pop(plan_id, None)
         return {"deleted": plan_id}
 
     @app.get("/api/export/<plan_id>")
@@ -136,7 +168,12 @@ def create_app(atlas: Atlas, store: PlanStore, on_ping, on_quit) -> Flask:
             plan = store.load(plan_id)
         except FileNotFoundError:
             abort(404)
-        return app.response_class(to_csv(plan, atlas), mimetype="text/csv", headers={
+        pat = patients.get(plan_id)
+        if space_of(plan) == "patient":
+            csv_text = to_csv(plan, pat.atlas if pat else None, pat.warp if pat else None)
+        else:
+            csv_text = to_csv(plan, atlas)
+        return app.response_class(csv_text, mimetype="text/csv", headers={
             "Content-Disposition": f'attachment; filename="{_safe_filename(plan.get("name", ""))}"'})
 
     @app.post("/api/import")

@@ -11,6 +11,10 @@ dependencies = [
     "flask>=3.1.3",
     "numpy>=1.26",
     "openpyxl>=3.1.5",
+    "nibabel>=5",
+    "h5py>=3.10",
+    "scipy>=1.11",
+    "scikit-image>=0.22",
 ]
 
 [project.scripts]
@@ -27,9 +31,11 @@ dev = [
 ]
 build = [
     "nilearn>=0.11",
-    "scikit-image>=0.22",
-    "scipy>=1.11",
 ]
 
 [tool.uv]
 default-groups = ["dev", "build"]
+
+[tool.pytest.ini_options]
+markers = ["ui: browser tests are slow and don't run by default. Run them with: uv run pytest -m ui"]
+addopts = "-m 'not ui'"

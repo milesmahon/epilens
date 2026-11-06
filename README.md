@@ -36,6 +36,12 @@ Coordinates are in generic MNI space
 Supports import and export to/from csv/excel: one row per contact, with contact labels like `LAH1` and MNI coordinates (columns
 such as `MNI X`, or `MNI X,Y,Z_1` to `_3`). Grids and strips are skipped.
 
+### Patient brain
+Epilens can visualize patient imaging. It currently accepts LeGUI output `Registered/` folders, with these files: `MR.nii`, `y_MR.nii`, `Surfaces.mat`, `MRGray.nii` and `MRWhite.nii`. Also, `ACPCmm.mat` (AC/PC markers) and `CT.nii` (CT sections) are used if present. It ignores any other file.
+
+**Privacy** The app runs only on your computer and makes no network calls. Imaging is stored in memory (not saved to disk). 
+Plan names and coordinates are saved to disk. Don't put sensitive info in plan names.
+
 **Adding words:** abbreviations and phrasings are in `src/epilens/data/aliases.csv`
 (`alias,base,modifier`).
 
@@ -47,3 +53,6 @@ uv run pytest                           # browser tests use the system google-ch
 uv run epilens                          # http://localhost:8737/
 uv run python scripts/build_atlas.py    # rebuild src/epilens/data (downloads atlases)
 ```
+
+## Disclaimer
+epilens is a research tool not approved for medical use. All anatomy and coordinates are approximate.

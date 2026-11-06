@@ -27,7 +27,7 @@ const NUDGES = [
   ],
 ];
 
-export function makeUI({ plans, atlas, layer, view, adjust }) {
+export function makeUI({ plans, atlas, layer, view, adjust, anatomy }) {
   const cmd = $("cmd"),
     readAs = $("readAs"),
     pickEl = $("pick"),
@@ -38,9 +38,12 @@ export function makeUI({ plans, atlas, layer, view, adjust }) {
   async function parse(text) {
     try {
       const r = await fetch(
-        `api/parse?q=${encodeURIComponent(text)}&spacing=${spacing()}`,
+        `api/parse?q=${encodeURIComponent(text)}&spacing=${spacing()}&plan=${plans.current.id}`,
       );
-      return await r.json();
+      const p = await r.json();
+      if (!r.ok && p.error)
+        return { ok: false, read_as: p.error, options: [], warnings: [] };
+      return p;
     } catch (err) {
       return {
         ok: false,
@@ -390,7 +393,7 @@ export function makeUI({ plans, atlas, layer, view, adjust }) {
             h("div", { class: "sub" }, `${s} mm spacing · ${length} mm long`),
           ),
         );
-        if (out.length)
+        if (out.length && !adjust.frozen) // with no brain loaded every contact would look outside it
           row.append(
             h(
               "div",
@@ -400,7 +403,7 @@ export function makeUI({ plans, atlas, layer, view, adjust }) {
           );
         const more = h(
           "details",
-          { class: "adjust" },
+          adjust.frozen ? { class: "adjust", hidden: "" } : { class: "adjust" },
           h("summary", {}, "Adjust position"),
           nudgePanel(e),
         );
@@ -532,7 +535,7 @@ export function makeUI({ plans, atlas, layer, view, adjust }) {
     const el = plans.current.electrodes.find((x) => x.id === hit.eid);
     tip.innerHTML =
       `<b>${esc(el.name)}</b> · contact ${hit.k}<br>${esc(atlas.labelAt(hit.xyz))}` +
-      `<br><span class="m">MNI ${hit.xyz.map((v) => v.toFixed(1)).join(", ")}</span>`;
+      `<br><span class="m">${anatomy.space === "patient" ? "AC-PC" : "MNI"} ${hit.xyz.map((v) => v.toFixed(1)).join(", ")}</span>`;
     tip.style.display = "block";
     tip.style.left = e.offsetX + 14 + "px";
     tip.style.top = e.offsetY + 14 + "px";

@@ -327,5 +327,19 @@ def _resolve_inner(text: str, atlas: Atlas, spacing: float, depth: int) -> Parse
                  read_as=f"entry: {entry.text} · target: {target.text} · {n_text}", warnings=warnings)
 
 
-def parse(text: str, atlas: Atlas | None = None, spacing: float = 5.0) -> Parse:
-    return _resolve(text, atlas or Atlas.load(), spacing, depth=0)
+def parse(text: str, atlas: Atlas | None = None, spacing: float = 5.0, space: str = "mni") -> Parse:
+    p = _resolve(text, atlas or Atlas.load(), spacing, depth=0)
+    return _relabel(p) if space == "patient" else p
+
+
+def _relabel(p: Parse) -> Parse:
+    # Coordinates are in either MNI or AC-PC depending on model  
+    def end(e):
+        if e is not None and e.mode == "coords" and e.text.startswith("MNI ("):
+            e.text = "AC-PC (" + e.text[len("MNI ("):]
+        return e
+    end(p.target), end(p.entry)
+    for o in p.options or []:
+        if isinstance(o, Parse):
+            _relabel(o)
+    return p
