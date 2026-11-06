@@ -1,5 +1,7 @@
 // The settings menu (hardware, import and quit), dropping files on the page, and Export CSV
 import { $, h } from "./dom.js";
+import { notify, ask, askText } from "./dialog.js";
+import { rememberTabs } from "./ui.js";
 
 const DROP_TEXT =
   "Drop CSV or Excel files to add electrodes, or drop a reconstruction folder";
@@ -83,12 +85,12 @@ export function makeMenu({ plans, anatomy }) {
     }).catch(() => null);
     const body = await r?.json().catch(() => ({}));
     if (!r?.ok)
-      return alert(
+      return notify(
         `Could not import ${file.name}:\n${body?.error || "can't reach epilens"}`,
       );
     const { notes, ...plan } = body;
     plans.add(null, plan);
-    if (notes?.length) alert(`Imported ${file.name}.\n\n${notes.join("\n\n")}`);
+    if (notes?.length) await notify(`Imported ${file.name}.\n\n${notes.join("\n\n")}`);
   }
 
   const dropHint = h("div", { class: "drop", hidden: "" }, DROP_TEXT);
@@ -131,7 +133,7 @@ export function makeMenu({ plans, anatomy }) {
       (f) => /\.(csv|txt|xlsx|xls)$/i.test(f.name) || f.type === "text/csv",
     );
     if (csvs.length < files.length) {
-      alert(
+      await notify(
         `Only CSV and Excel files can be opened here (skipped: ${files
           .filter((f) => !csvs.includes(f))
           .map((f) => f.name)
@@ -149,7 +151,7 @@ export function makeMenu({ plans, anatomy }) {
     for (const f of files) (byKey[fileKey(f.name)] ||= []).push(f);
     const twice = Object.values(byKey).filter((fs) => fs.length > 1);
     if (twice.length)
-      return alert(
+      return notify(
         `These files are in the drop more than once, so it isn't clear which patient they belong to:\n${twice
           .flat()
           .map((f) => f.path || f.name)
@@ -158,23 +160,23 @@ export function makeMenu({ plans, anatomy }) {
     let name = null;
     if (/^Plan \d+$/.test(plan.name)) {
       while (!name) {
-        const typed = prompt(
+        const typed = await askText(
           "Name this plan (for example the patient's name or ID):",
         );
         if (typed === null) return; // cancelled, so nothing happens
         name = typed.trim();
       }
     }
-    const ask =
+    const question =
       plan.space !== "patient"
         ? "Move this plan onto the patient's brain? Electrodes will be converted to the patient's AC-PC coordinates."
         : anatomy.missing
           ? null // after a restart: just load the brain back
           : "This plan is already on a patient's brain. Load this folder as its brain instead? Coordinates won't change, so it must be the same patient.";
-    if (ask && !confirm(ask)) return;
+    if (question && !(await ask(question, "Continue"))) return;
     if (name) plans.rename(plan.id, name);
     if (!(await plans.saveNow(plan)))
-      return alert(
+      return notify(
         "Couldn't save this plan first, so the patient wasn't loaded.",
       );
     // Hold all edits until the server has converted the plan: anything saved meanwhile would be overwritten, or undo it
@@ -208,10 +210,10 @@ export function makeMenu({ plans, anatomy }) {
       const body = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
       plans.replace(body.plan);
-      if (body.warnings?.length) alert(body.warnings.join("\n"));
+      if (body.warnings?.length) await notify(body.warnings.join("\n"));
     } catch (err) {
       plans.paused = false;
-      return alert(`Couldn't load the patient:\n${err.message || err}`);
+      return notify(`Couldn't load the patient:\n${err.message || err}`);
     } finally {
       dropHint.hidden = true;
       dropHint.classList.remove("busy");
@@ -222,11 +224,12 @@ export function makeMenu({ plans, anatomy }) {
     } catch (e) {
       /* storage blocked */
     }
+    rememberTabs(plan.id);
     location.reload(); // the page is built for one brain, so reload onto the patient's
   }
 
   async function quit() {
-    if (!confirm("Stop epilens? Plans are saved.")) return;
+    if (!(await ask("Stop epilens? Plans are saved.", "Quit"))) return;
     await fetch("api/quit", { method: "POST" }).catch(() => {});
     document.body.append(h("div", { class: "stopped" }, "epilens stopped."));
   }
@@ -308,7 +311,7 @@ export function makeMenu({ plans, anatomy }) {
   // save first, because the server exports the saved plan
   $("exportBtn").addEventListener("click", async () => {
     if (!(await plans.saveNow(plans.current)))
-      return alert(`Export failed: ${plans.saveError || "this tab is paused"}`);
+      return notify(`Export failed: ${plans.saveError || "this tab is paused"}`);
     h("a", { href: `api/export/${plans.current.id}`, download: "" }).click();
   });
 

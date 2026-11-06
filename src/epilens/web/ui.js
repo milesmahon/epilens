@@ -1,6 +1,7 @@
 // The page controls: the typing bar, the electrode list, the tabs and the 3D view controls
 import { contacts, electrodeFrom, spacingOf } from "./plan.js";
 import { $, esc, h } from "./dom.js";
+import { ask } from "./dialog.js";
 
 const fmt = (xyz) => xyz.map((v) => v.toFixed(1)).join(" ");
 // Show a lateral entry by its region instead of "lateral (default)"
@@ -393,7 +394,8 @@ export function makeUI({ plans, atlas, layer, view, adjust, anatomy }) {
             h("div", { class: "sub" }, `${s} mm spacing · ${length} mm long`),
           ),
         );
-        if (out.length && !adjust.frozen) // with no brain loaded every contact would look outside it
+        if (out.length && !adjust.frozen)
+          // with no brain loaded every contact would look outside it
           row.append(
             h(
               "div",
@@ -467,6 +469,7 @@ export function makeUI({ plans, atlas, layer, view, adjust, anatomy }) {
           "div",
           {
             class: "tab" + (p === plans.current ? " cur" : ""),
+            "data-id": p.id,
             title: "Double-click to rename",
             onclick: () => p !== plans.current && plans.switchTo(p.id),
             ondblclick: () => {
@@ -482,12 +485,10 @@ export function makeUI({ plans, atlas, layer, view, adjust, anatomy }) {
               title: "Close plan",
               onclick: (ev) => {
                 ev.stopPropagation();
-                if (
-                  confirm(
-                    `Close "${p.name}"? Its saved copy will be deleted (export a CSV first if you need it).`,
-                  )
-                )
-                  plans.close(p.id);
+                ask(
+                  `Close "${p.name}"? Its saved copy will be deleted (export a CSV first if you need it).`,
+                  "Close plan",
+                ).then((ok) => ok && plans.close(p.id));
               },
             },
             "×",
@@ -546,4 +547,16 @@ export function makeUI({ plans, atlas, layer, view, adjust, anatomy }) {
     renderList();
   }
   return { render };
+}
+
+// Keep the tab strip for the page that loads next, so it doesn't disappear
+export function rememberTabs(currentId) {
+  const tabs = document.getElementById("tabs");
+  for (const t of tabs.querySelectorAll(".tab"))
+    t.classList.toggle("cur", t.dataset.id === currentId);
+  try {
+    sessionStorage.setItem("epilens.tabs", tabs.innerHTML);
+  } catch (e) {
+    /* storage blocked */
+  }
 }

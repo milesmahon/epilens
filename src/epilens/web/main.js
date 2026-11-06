@@ -2,7 +2,7 @@ import { initScene } from "./scene.js";
 import { makeAtlas } from "./atlasjs.js";
 import { Plans, contacts, brainKey } from "./plan.js";
 import { makeElectrodeLayer } from "./draw.js";
-import { makeUI } from "./ui.js";
+import { makeUI, rememberTabs } from "./ui.js";
 import { makeAdjust } from "./adjust.js";
 import { makeMenu } from "./menu.js";
 import { makeSlice } from "./slice.js";
@@ -83,6 +83,7 @@ async function reloadOnto(next) {
   } catch (e) {
     /* storage blocked */
   }
+  rememberTabs(next.id);
   location.reload();
 }
 plans.beforeSwitch = (next) =>

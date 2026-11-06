@@ -1003,6 +1003,35 @@ input[type="range"] {
   font-size: 19px;
   z-index: 50;
 }
+/* notices and questions (dialog.js) */
+dialog.notice {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
+  box-shadow: var(--shadow-pop);
+  padding: 20px 22px 16px;
+  width: min(460px, calc(100vw - 40px));
+  color: var(--ink);
+  background: var(--paper);
+}
+dialog.notice::backdrop {
+  background: #16202a40;
+}
+dialog.notice p {
+  margin: 0 0 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 60vh;
+  overflow: auto;
+}
+dialog.notice input {
+  width: 100%;
+  margin-bottom: 16px;
+}
+dialog.notice .buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .drop {
   position: fixed;
   inset: 12px;

@@ -85,6 +85,7 @@ export function makeSections({ view, plans, atlas, anatomy }) {
       .catch(() => (loading = false)); // try again on the next draw
   }
   const firstVol = ["MR", ...Object.keys(volumes)].find((k) => k in volumes);
+  const scanName = (k) => ({ MR: "T1", CT: "CT" })[k] || k; // MR.nii is the patient's T1 MRI
   if (firstVol) scan = patientScan(firstVol);
   const box = document.getElementById("sections"),
     toggle = document.getElementById("split");
@@ -102,7 +103,7 @@ export function makeSections({ view, plans, atlas, anatomy }) {
     "div",
     { class: "sourceNote" + (isPatient ? "" : " template") },
     isPatient
-      ? `Patient ${firstVol || "scan missing"}`
+      ? `Patient ${firstVol ? scanName(firstVol) : "scan missing"}`
       : "Template T1 (ICBM152)",
   );
   const bar = h("div", { class: "secBar" }, "Cursor", at, info);
@@ -111,12 +112,14 @@ export function makeSections({ view, plans, atlas, anatomy }) {
     const pickVol = h(
       "select",
       { class: "secVol", title: "Scan shown in the sections" },
-      ...Object.keys(volumes).map((k) => h("option", { value: k }, k)),
+      ...Object.keys(volumes).map((k) =>
+        h("option", { value: k }, scanName(k)),
+      ),
     );
     pickVol.value = firstVol;
     pickVol.addEventListener("change", () => {
       scan = patientScan(pickVol.value);
-      note.textContent = `Patient ${pickVol.value}`;
+      note.textContent = `Patient ${scanName(pickVol.value)}`;
       lastKey = ""; // redraw
     });
     bar.append(pickVol);

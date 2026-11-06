@@ -60,11 +60,19 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-      # installers also go on the run's page under Artifacts
+      # just the installers, side by side (the .exe and .msi on Windows, the .dmg on macOS)
+      - name: Collect installers
+        shell: bash
+        run: |
+          mkdir -p installers
+          find src-tauri/target -path '*/release/bundle/*' \
+            \( -name '*.exe' -o -name '*.msi' -o -name '*.dmg' \) -exec cp {} installers/ \;
+          ls -l installers
+
+      # they also go on the run's page under Artifacts
       - name: Upload installers
         uses: actions/upload-artifact@v7
         with:
           name: epilens-${{ matrix.platform }}
-          path: |
-            src-tauri/target/release/bundle/
-            src-tauri/target/*/release/bundle/
+          path: installers/
+          if-no-files-found: error

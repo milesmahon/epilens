@@ -20,6 +20,14 @@
       <header id="head">
         <span class="brand">epilens</span>
         <div id="tabs"></div>
+        <script>
+          // the tabs from the page before a reload, until main.js draws them
+          try {
+            const t = sessionStorage.getItem("epilens.tabs");
+            sessionStorage.removeItem("epilens.tabs");
+            if (t) document.getElementById("tabs").innerHTML = t;
+          } catch (e) {}
+        </script>
         <div class="actions">
           <button id="importBtn" title="Open a CSV or Excel plan">
             Import…
@@ -108,7 +116,7 @@
         <div id="viewer">
           <div id="stage">
             <div id="labels"></div>
-            <div id="brainNote" class="sourceNote"></div>
+            <div id="brainNote" class="sourceNote">Loading the brain…</div>
             <div id="tip"></div>
             <div id="offline" hidden></div>
             <div id="missing" hidden>
