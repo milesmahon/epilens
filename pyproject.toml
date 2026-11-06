@@ -14,7 +14,6 @@ dependencies = [
     "nibabel>=5",
     "h5py>=3.10",
     "scipy>=1.11",
-    "scikit-image>=0.22",
 ]
 
 [project.scripts]
@@ -32,6 +31,7 @@ dev = [
 build = [
     "nilearn>=0.11",
     "pyinstaller>=6.0",
+    "scikit-image>=0.22",  # scripts/build_atlas.py only
 ]
 
 [tool.uv]
